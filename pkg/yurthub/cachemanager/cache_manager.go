@@ -337,6 +337,7 @@ func (cm *cacheManager) saveWatchObject(ctx context.Context, info *apirequest.Re
 
 func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.RequestInfo, b []byte) error {
 	reqContentType, _ := util.ReqContentTypeFrom(ctx)
+	// respContentType was added at RemoteProxy.
 	respContentType, _ := util.RespContentTypeFrom(ctx)
 	serializers, err := cm.serializerManager.CreateSerializers(reqContentType, info.APIGroup, info.APIVersion)
 	if err != nil {

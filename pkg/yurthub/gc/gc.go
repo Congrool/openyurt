@@ -89,17 +89,24 @@ func (m *GCManager) Run() {
 }
 
 func (m *GCManager) gcPodsWhenRestart() error {
+	// Find all the files whose name(in other words, key) have prefix of "tmp_" under the floder
+	// "${store.dir}/kubelet/pods". "${store.dir}" is "/etc/kubernetes/cache" in default.
+	// localPodKeys is the list of all these file names.
 	localPodKeys, err := m.store.ListKeys("kubelet/pods")
 	if err != nil || len(localPodKeys) == 0 {
 		return nil
 	}
 	klog.Infof("list pod keys from storage, total: %d", len(localPodKeys))
 
+	// RestConfig belongs to certManager.
 	cfg := m.transportManager.GetRestClientConfig()
 	if cfg == nil {
 		klog.Errorf("could not get rest config, so skip gc pods when restart")
 		return err
 	}
+	// Create Clientset
+	// TODO:
+	// What's the Clientset?
 	kubeClient, err := clientset.NewForConfig(cfg)
 	if err != nil {
 		klog.Errorf("could not new kube client, %v", err)
@@ -107,6 +114,8 @@ func (m *GCManager) gcPodsWhenRestart() error {
 	}
 
 	listOpts := metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("spec.nodeName", m.nodeName).String()}
+	// podList does a request(to APIServer?) to retrive pods list with field selector set above.
+	// If offline ?
 	podList, err := kubeClient.CoreV1().Pods(v1.NamespaceAll).List(listOpts)
 	if err != nil {
 		klog.Errorf("could not list pods for node(%s), %v", m.nodeName, err)
@@ -150,7 +159,7 @@ func (m *GCManager) gcEvents(kubeClient clientset.Interface, component string) {
 	if kubeClient == nil {
 		return
 	}
-
+	// component can be kubelet and kube-proxy.
 	localEventKeys, err := m.store.ListKeys(fmt.Sprintf("%s/events", component))
 	if err != nil {
 		klog.Errorf("could not list keys for %s events, %v", component, err)
@@ -169,6 +178,7 @@ func (m *GCManager) gcEvents(kubeClient clientset.Interface, component string) {
 			continue
 		}
 
+		// client with namespace "ns" does a request to APIServer to get events with name "name".
 		_, err := kubeClient.CoreV1().Events(ns).Get(name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			deletedEvents = append(deletedEvents, key)
