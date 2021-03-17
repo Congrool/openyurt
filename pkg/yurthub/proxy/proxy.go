@@ -83,12 +83,17 @@ func NewYurtReverseProxyHandler(
 
 func (p *yurtReverseProxy) buildHandlerChain(handler http.Handler) http.Handler {
 	handler = util.WithRequestTrace(handler)
+	// util.WithRequestTrace modifies the handler and then passes
+	// it to util.WithRequestContentType
 	handler = util.WithRequestContentType(handler)
 	handler = util.WithCacheHeaderCheck(handler)
 	handler = util.WithRequestTimeout(handler)
 	handler = util.WithRequestClientComponent(handler)
 	handler = filters.WithRequestInfo(handler, p.resolver)
 	handler = util.WithMaxInFlightLimit(handler, p.maxRequestsInFlight)
+	// So, the call process is from WithMaxInFlightLimit to WithRequestContentType.
+	// For example, WithMaxInFlightLimit will call handler.ServeHTTP() which is the function
+	// returned from WithRequestInfo.
 	return handler
 }
 

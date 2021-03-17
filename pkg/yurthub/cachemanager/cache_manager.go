@@ -78,7 +78,9 @@ var (
 
 // CacheManager is an adaptor to cache runtime object data into backend storage
 type CacheManager interface {
+	// CacheResponse cache response of request into backend storage
 	CacheResponse(ctx context.Context, prc io.ReadCloser, stopCh <-chan struct{}) error
+	// QueryCache get runtime object from backend storage for request
 	QueryCache(req *http.Request) (runtime.Object, error)
 	UpdateCacheAgents(agents []string) error
 	ListCacheAgents() []string
@@ -537,7 +539,7 @@ func isCreate(ctx context.Context) bool {
 // 1. component is not set
 // 2. delete/deletecollection/proxy request
 // 3. sub-resource request but is not status
-// 4. csr resource request
+// 4. csr resource request(CSR is certificate signing request)
 func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 	ctx := req.Context()
 	comp, ok := util.ClientComponentFrom(ctx)

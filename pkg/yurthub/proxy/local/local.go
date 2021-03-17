@@ -46,7 +46,8 @@ type IsHealthy func() bool
 
 // LocalProxy is responsible for handling requests when remote servers are unhealthy
 type LocalProxy struct {
-	cacheMgr  manager.CacheManager
+	cacheMgr manager.CacheManager
+	// isHealthy is not the status of local proxy
 	isHealthy IsHealthy
 }
 
@@ -113,6 +114,8 @@ func (lp *LocalProxy) localPost(w http.ResponseWriter, req *http.Request) error 
 	info, _ := apirequest.RequestInfoFrom(ctx)
 	if info.Resource == "events" {
 		stopCh := make(chan struct{})
+		// rc is new created dualReadCloser
+		// prc is pipe readcloser.
 		rc, prc := util.NewDualReadCloser(req.Body, false)
 		go func(ctx context.Context, prc io.ReadCloser, stopCh <-chan struct{}) {
 			klog.V(2).Infof("cache events when cluster is unhealthy, %v", lp.cacheMgr.CacheResponse(ctx, prc, stopCh))
@@ -123,8 +126,11 @@ func (lp *LocalProxy) localPost(w http.ResponseWriter, req *http.Request) error 
 
 	headerNStr := req.Header.Get("Content-Length")
 	headerN, _ := strconv.Atoi(headerNStr)
+
+	// ReadFrom req.Body will call dualReadCloser.Read(), that means we can read the req.body from prc as well.
 	n, err := buf.ReadFrom(req.Body)
 	if err != nil || (headerN != 0 && int(n) != headerN) {
+		// Is it possible for HTTP?
 		klog.Warningf("read body of post request when cluster is unhealthy, expect %d bytes but get %d bytes with error, %v", headerN, n, err)
 	}
 
@@ -173,6 +179,7 @@ func (lp *LocalProxy) localWatch(w http.ResponseWriter, req *http.Request) error
 	}
 
 	watchTimer := time.NewTimer(timeout)
+	// Why set intervalTicker here?
 	intervalTicker := time.NewTicker(interval)
 	defer watchTimer.Stop()
 	defer intervalTicker.Stop()

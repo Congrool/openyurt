@@ -130,9 +130,11 @@ func (tm *transportManager) CurrentTransport() *http.Transport {
 }
 
 func (tm *transportManager) Close(address string) {
+	// Close all connections to address.
 	tm.close(address)
 }
 
+// Why not expose start()?
 func (tm *transportManager) start() {
 	lastCert := tm.certManager.Current()
 
