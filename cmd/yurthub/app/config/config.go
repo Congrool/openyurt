@@ -14,6 +14,7 @@ import (
 
 // YurtHubConfiguration represents configuration of yurthub
 type YurtHubConfiguration struct {
+	// Load Balance Mode
 	LBMode                    string
 	RemoteServers             []*url.URL
 	YurtHubServerAddr         string

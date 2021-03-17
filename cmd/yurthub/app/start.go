@@ -81,6 +81,8 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	}
 	trace++
 
+	// Components about cert
+	// CERT BEGIN:
 	klog.Infof("%d. init cert initializer", trace)
 	cmInitializer := initializer.NewCMInitializer(healthChecker)
 	trace++
@@ -98,6 +100,7 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 		return err
 	}
 	trace++
+	// CERT END
 
 	klog.Infof("%d. update transport manager", trace)
 	err = transportManager.UpdateTransport(certManager)
@@ -116,6 +119,7 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	storageWrapper := cachemanager.NewStorageWrapper(storageManager)
 	trace++
 
+	// TODO: What does serializer manager do?
 	klog.Infof("%d. new serializer manager", trace)
 	serializerManager := serializer.NewSerializerManager()
 	trace++
@@ -137,6 +141,7 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	gcMgr.Run()
 	trace++
 
+	// It's Local Proxy.
 	klog.Infof("%d. new reverse proxy handler for remote servers", trace)
 	yurtProxyHandler, err := proxy.NewYurtReverseProxyHandler(cfg, cacheMgr, transportManager, healthChecker, certManager, stopCh)
 	if err != nil {
@@ -148,6 +153,8 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	klog.Infof("%d. new %s server and begin to serve, proxy server: %s, hub server: %s", trace, projectinfo.GetHubName(), cfg.YurtHubProxyServerAddr, cfg.YurtHubServerAddr)
 	s := server.NewYurtHubServer(cfg, certManager, yurtProxyHandler)
 	s.Run()
+	// Will it can be here? It may be trapped in Run() and never return.
+	// StopCh is wait.NeverStop.
 	<-stopCh
 	return nil
 }
