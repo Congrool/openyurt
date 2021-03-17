@@ -35,6 +35,7 @@ type loadBalancerAlgo interface {
 	Name() string
 }
 
+// Round Robin
 type rrLoadBalancerAlgo struct {
 	sync.Mutex
 	backends []*RemoteProxy
@@ -55,6 +56,7 @@ func (rr *rrLoadBalancerAlgo) PickOne() *RemoteProxy {
 		return nil
 	} else {
 		// round robin
+		// poll to find the next first healthy remote proxy
 		rr.Lock()
 		defer rr.Unlock()
 		hasFound := false
@@ -96,6 +98,8 @@ func (prio *priorityLoadBalancerAlgo) PickOne() *RemoteProxy {
 	} else {
 		prio.Lock()
 		defer prio.Unlock()
+		// It just polls?
+		// Where is the priority?
 		for i := 0; i < len(prio.backends); i++ {
 			if prio.backends[i].IsHealthy() {
 				return prio.backends[i]

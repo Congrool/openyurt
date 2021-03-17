@@ -152,18 +152,26 @@ func (c *checker) healthyCheckLoop(stopCh <-chan struct{}) {
 			return
 		case <-intervalTicker.C:
 			for i := 0; i < c.failedRetry; i++ {
+				// isHealthy is the current health status, while c.clusterHealthy is the health
+				// status of last check.
 				isHealthy, err = PingClusterHealthz(c.healthzClient, c.serverHealthzAddr)
 				if err != nil {
 					klog.V(2).Infof("ping cluster healthz with result, %v", err)
 					if !c.clusterHealthy {
-						// cluster is unhealthy, no need ping more times to check unhealthy
+						// cluster was unhealthy, and there's an error during current check(Maybe the server
+						// is healthy, while there's something wrong in the network).
+						// We don't need to ping more times to check unhealthy.
 						break
 					}
 				} else {
+					// Why does it need to retry even when PingClusterHealthz() has succeed?
 					if c.clusterHealthy {
-						// cluster is healthy, no need ping more times to check healthy
+						// cluster was healthy, and current health check is successfully done.
+						// We are not bothered to ping more times to check healthy
 						break
 					}
+
+					// If PingClusterHealthz succeed and !c.clusterHealthy, it need to retry.
 				}
 			}
 

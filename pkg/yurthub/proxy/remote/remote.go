@@ -96,6 +96,8 @@ func (rp *RemoteProxy) modifyResponse(resp *http.Response) error {
 		if info.Verb == "watch" {
 			klog.V(5).Infof("add transfer-encoding=chunked header into response for req %s", util.ReqString(req))
 			h := resp.Header
+			// Transfer-Encoding means it will transport chunked data for several times.
+			// And it will maintain a long time connection to client for data transport.
 			if hv := h.Get("Transfer-Encoding"); hv == "" {
 				h.Add("Transfer-Encoding", "chunked")
 			}
