@@ -150,9 +150,19 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	// Start the controller manager HTTP server
 	// unsecuredMux is the handler for these controller *after* authn/authz filters have been applied
+	// add handlers on paths
+	// /metrix
+	// /healthz
+	// /debug/*
 	var unsecuredMux *mux.PathRecorderMux
 	unsecuredMux = genericcontrollermanager.NewBaseHandler(&c.ComponentConfig.Generic.Debugging, checks...)
 	insecureSuperuserAuthn := apiserver.AuthenticationInfo{Authenticator: &apiserver.InsecureSuperuser{}}
+
+	// BuildHandlerChain:
+	// WithAuthentation
+	// WithRequestInfo
+	// WithCacheControll
+	// WIthPanicRecovery
 	handler := genericcontrollermanager.BuildHandlerChain(unsecuredMux, nil, &insecureSuperuserAuthn)
 	addr := net.JoinHostPort(c.ComponentConfig.Generic.Address, fmt.Sprintf("%d", c.ComponentConfig.Generic.Port))
 	listener, _, err := serveroptions.CreateListener("tcp", addr)
@@ -177,23 +187,36 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		var clientBuilder controller.ControllerClientBuilder
 
 		clientBuilder = rootClientBuilder
+		// rootClientBuilder is the same as clientBuilder.
+		// What does the client they create do?
 		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
 
+		// NewControllerInitializers returns a map only contains "nodelifecycle:StartNodeLifecycleController".
+		// So, it just make NodeLifecycleController start.
+		// StartControllers will add debugHandler to unsecuredMux if any returns from NewControllerInitializers().
+		// While for NodeLifecycleController, there's no handler returned.
 		if err := StartControllers(controllerContext, NewControllerInitializers(), unsecuredMux); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
+		// controllerContext.InformerFactory is informers.NewSharedInformerFactory(versionClient, ReSync())
+		// versionClient is informers.NewInformerFactory(rootClientBuilder.ClientOrDie("shared-informers"))
 		controllerContext.InformerFactory.Start(controllerContext.Stop)
 		close(controllerContext.InformersStarted)
+		// Then the controller can start their informer(according to the
+		// comment of ControllerContext.InformersStarted)
+		// But, I can't find anyone using the InformersStarted.
 
 		select {}
 	}
 
 	if !c.ComponentConfig.Generic.LeaderElection.LeaderElect {
 		run(context.TODO())
+		// Be blocked
+		// unreachable
 		panic("unreachable")
 	}
 
@@ -217,12 +240,19 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		klog.Fatalf("error creating lock: %v", err)
 	}
 
+	// Start leader election
+	// Who will content with yurt-controller-manager for leadership ?
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
-		Lock:          rl,
+		Lock: rl,
+		// leader-elect-lease-duration为资源锁租约观察时间，
+		// 如果其它竞争者在该时间间隔过后发现leader没更新获取锁时间，则其它副本可以认为leader已经挂掉不参与工作了，将重新选举leader。
 		LeaseDuration: c.ComponentConfig.Generic.LeaderElection.LeaseDuration.Duration,
+		// leader-elect-renew-deadline leader在该时间内没有更新则失去leader身份。
 		RenewDeadline: c.ComponentConfig.Generic.LeaderElection.RenewDeadline.Duration,
-		RetryPeriod:   c.ComponentConfig.Generic.LeaderElection.RetryPeriod.Duration,
+		// leader-elect-retry-period为其它副本获取锁的时间间隔(竞争leader)和leader更新间隔。
+		RetryPeriod: c.ComponentConfig.Generic.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
+			// yurt-controller-manager will execute run() on its obtaining leadership.
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
 				klog.Fatalf("leaderelection lost")
@@ -326,6 +356,7 @@ func StartControllers(ctx ControllerContext, controllers map[string]InitFunc, un
 		time.Sleep(wait.Jitter(ctx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
 
 		klog.V(1).Infof("Starting %q", controllerName)
+		// What dose debugHandler do?
 		debugHandler, started, err := initFn(ctx)
 		if err != nil {
 			klog.Errorf("Error starting %q", controllerName)
