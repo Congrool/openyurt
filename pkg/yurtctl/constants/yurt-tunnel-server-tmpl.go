@@ -33,6 +33,7 @@ rules:
     - get
     - list
     - watch
+    - create
 - apiGroups:
     - certificates.k8s.io
   resources:
@@ -197,7 +198,7 @@ spec:
       containers:
       - name: yurt-tunnel-server
         image: {{.image}} 
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent 
         command:
         - yurt-tunnel-server
         args:
