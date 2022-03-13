@@ -17,6 +17,7 @@ limitations under the License.
 package edgenode
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -203,6 +204,20 @@ func Exec(cmd *exec.Cmd) error {
 		return err
 	}
 	return nil
+}
+
+func ExecCmd(cmd *exec.Cmd) error {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	outStr, errStr := string(stdout.Bytes()), string(stderr.Bytes())
+	fmt.Printf(outStr)
+	if err != nil {
+		pos := strings.Index(errStr, "Usage:")
+		fmt.Printf(errStr[:pos])
+	}
+	return err
 }
 
 // GetPodManifestPath return podManifestPath, use default value of kubeadm/minikube/kind. etc.

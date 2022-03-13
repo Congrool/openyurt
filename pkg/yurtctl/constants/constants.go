@@ -56,12 +56,16 @@ const (
 	KubeUrlFormat                   = "https://%s/%s/kubernetes-node-linux-%s.tar.gz"
 	TmpDownloadDir                  = "/tmp"
 	FlannelIntallFile               = "https://aliacs-edge-k8s-cn-hangzhou.oss-cn-hangzhou.aliyuncs.com/public/pkg/openyurt/flannel.yaml"
+	SealerUrlFormat                 = "https://github.com/alibaba/sealer/releases/download/%s/sealer-%s-linux-%s.tar.gz"
+	OpenYurtClusterImageFormat      = "%s/openyurt-cluster:%s"
 
 	EdgeNode  = "edge"
 	CloudNode = "cloud"
 
 	DefaultOpenYurtImageRegistry = "registry.cn-hangzhou.aliyuncs.com/openyurt"
 	DefaultOpenYurtVersion       = "latest"
+	DefaultSealerVersion         = "v0.6.1"
+	DefaultKindVersion           = "v0.11.1"
 	YurtControllerManager        = "yurt-controller-manager"
 	YurtTunnelServer             = "yurt-tunnel-server"
 	YurtTunnelAgent              = "yurt-tunnel-agent"
@@ -69,6 +73,7 @@ const (
 	YurtAppManager               = "yurt-app-manager"
 	YurtAppManagerNamespace      = "kube-system"
 	DirMode                      = 0755
+	FileMode                     = 0666
 	KubeletServiceContent        = `
 [Unit]
 Description=kubelet: The Kubernetes Node Agent
