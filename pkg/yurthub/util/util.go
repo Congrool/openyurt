@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -275,15 +274,6 @@ func (dr *dualReadCloser) Close() error {
 	}
 
 	return nil
-}
-
-// KeyFunc combine comp resource ns name into a key
-func KeyFunc(comp, resource, ns, name string) (string, error) {
-	if comp == "" || resource == "" {
-		return "", fmt.Errorf("createKey: comp, resource can not be empty")
-	}
-
-	return filepath.Join(comp, resource, ns, name), nil
 }
 
 // SplitKey split key into comp, resource, ns, name

@@ -36,6 +36,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/network"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy"
 	"github.com/openyurtio/openyurt/pkg/yurthub/server"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
@@ -133,7 +134,7 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	var cacheMgr cachemanager.CacheManager
 	if cfg.WorkingMode == util.WorkingModeEdge {
 		klog.Infof("%d. new cache manager with storage wrapper and serializer manager", trace)
-		cacheMgr, err = cachemanager.NewCacheManager(cfg.StorageWrapper, cfg.SerializerManager, cfg.RESTMapperManager, cfg.SharedFactory)
+		cacheMgr, err = cachemanager.NewCacheManager(cfg.StorageWrapper, disk.KeyFunc, cfg.SerializerManager, cfg.RESTMapperManager, cfg.SharedFactory)
 		if err != nil {
 			return fmt.Errorf("could not new cache manager, %v", err)
 		}

@@ -58,6 +58,7 @@ type CacheManager interface {
 
 type cacheManager struct {
 	sync.RWMutex
+	keyFunc               func(context.Context, string, string) (string, error)
 	storage               StorageWrapper
 	serializerManager     *serializer.SerializerManager
 	restMapperManager     *hubmeta.RESTMapperManager
@@ -69,12 +70,14 @@ type cacheManager struct {
 // NewCacheManager creates a new CacheManager
 func NewCacheManager(
 	storage StorageWrapper,
+	keyFunc func(context.Context, string, string) (string, error),
 	serializerMgr *serializer.SerializerManager,
 	restMapperMgr *hubmeta.RESTMapperManager,
 	sharedFactory informers.SharedInformerFactory,
 ) (CacheManager, error) {
 	cm := &cacheManager{
 		storage:               storage,
+		keyFunc:               keyFunc,
 		serializerManager:     serializerMgr,
 		restMapperManager:     restMapperMgr,
 		cacheAgents:           sets.NewString(util.DefaultCacheAgents...),
@@ -126,15 +129,10 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 		return nil, fmt.Errorf("failed to get request info")
 	}
 
-	comp, ok := util.ClientComponentFrom(ctx)
-	if !ok || comp == "" {
-		return nil, fmt.Errorf("failed to get component info")
-	}
-
 	if info.IsResourceRequest && info.Verb == "list" {
 		return cm.queryListObject(req)
 	} else if info.IsResourceRequest && (info.Verb == "get" || info.Verb == "patch" || info.Verb == "update") {
-		key, err := util.KeyFunc(comp, info.Resource, info.Namespace, info.Name)
+		key, err := cm.keyFunc(ctx, "", "")
 		if err != nil {
 			return nil, err
 		}
@@ -146,10 +144,8 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 
 func (cm *cacheManager) queryListObject(req *http.Request) (runtime.Object, error) {
 	ctx := req.Context()
-	comp, _ := util.ClientComponentFrom(ctx)
 	info, _ := apirequest.RequestInfoFrom(ctx)
-
-	key, err := util.KeyFunc(comp, info.Resource, info.Namespace, info.Name)
+	key, err := cm.keyFunc(ctx, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +297,7 @@ func (cm *cacheManager) saveWatchObject(ctx context.Context, info *apirequest.Re
 				continue
 			}
 
-			key, err := util.KeyFunc(comp, info.Resource, ns, name)
+			key, err := cm.keyFunc(ctx, ns, name)
 			if err != nil || key == "" {
 				klog.Errorf("failed to get cache path, %v", err)
 				continue
@@ -378,7 +374,6 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		klog.Errorf("failed to update the DynamicRESTMapper %v", err)
 	}
 
-	comp, _ := util.ClientComponentFrom(ctx)
 	if info.Name != "" && len(items) == 1 {
 		// list with fieldSelector=metadata.name=xxx
 		accessor.SetKind(items[0], kind)
@@ -388,7 +383,7 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		if ns == "" {
 			ns = info.Namespace
 		}
-		key, _ := util.KeyFunc(comp, info.Resource, ns, name)
+		key, _ := cm.keyFunc(ctx, ns, name)
 		err = cm.saveOneObjectWithValidation(key, items[0])
 		if err == storage.ErrStorageAccessConflict {
 			klog.V(2).Infof("skip to cache list object because key(%s) is under processing", key)
@@ -398,7 +393,7 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		return err
 	} else {
 		// list all objects or with fieldselector/labelselector
-		rootKey, _ := util.KeyFunc(comp, info.Resource, info.Namespace, info.Name)
+		rootKey, _ := cm.keyFunc(ctx, "", "")
 		objs := make(map[string]runtime.Object)
 		for i := range items {
 			accessor.SetKind(items[i], kind)
@@ -409,7 +404,7 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 				ns = info.Namespace
 			}
 
-			key, _ := util.KeyFunc(comp, info.Resource, ns, name)
+			key, _ := cm.keyFunc(ctx, ns, name)
 			objs[key] = items[i]
 		}
 		// if no objects in cloud cluster(objs is empty), it will clean the old files in the path of rootkey
@@ -452,7 +447,7 @@ func (cm *cacheManager) saveOneObject(ctx context.Context, info *apirequest.Requ
 		return nil
 	}
 
-	key, err := util.KeyFunc(comp, info.Resource, info.Namespace, name)
+	key, err := cm.keyFunc(ctx, info.Namespace, name)
 	if err != nil || key == "" {
 		klog.Errorf("failed to get cache key(%s:%s:%s:%s), %v", comp, info.Resource, info.Namespace, info.Name, err)
 		return err
@@ -479,7 +474,7 @@ func (cm *cacheManager) saveOneObjectWithValidation(key string, obj runtime.Obje
 	if isNotAssignedPod(obj) {
 		ns, _ := accessor.Namespace(obj)
 		name, _ := accessor.Name(obj)
-		return fmt.Errorf("pod(%s/%s) is not assigned to a node, skip cache it.", ns, name)
+		return fmt.Errorf("pod(%s/%s) is not assigned to a node, skip cache it", ns, name)
 	}
 
 	oldObj, err := cm.storage.Get(key)
@@ -597,7 +592,7 @@ func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 	cm.Lock()
 	defer cm.Unlock()
 	if info.Verb == "list" && info.Name == "" {
-		key, _ := util.KeyFunc(comp, info.Resource, info.Namespace, info.Name)
+		key, _ := cm.keyFunc(ctx, "", "")
 		selector, _ := util.ListSelectorFrom(ctx)
 		if oldSelector, ok := cm.listSelectorCollector[key]; ok {
 			if oldSelector != selector {
