@@ -144,7 +144,11 @@ func (rm *RESTMapperManager) updateCachedDynamicRESTMapper() error {
 	if err != nil {
 		return err
 	}
-	return rm.storage.Update(CacheDynamicRESTMapperKey, d)
+	_, err = rm.storage.Update(CacheDynamicRESTMapperKey, d, 0, true)
+	if err != nil && err == storage.ErrStorageNotFound {
+		return rm.storage.Create(CacheDynamicRESTMapperKey, d)
+	}
+	return err
 }
 
 // KindFor is used to find GVK based on GVR information.

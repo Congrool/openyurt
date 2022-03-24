@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -476,36 +475,23 @@ func (cm *cacheManager) saveOneObjectWithValidation(key string, obj runtime.Obje
 		name, _ := accessor.Name(obj)
 		return fmt.Errorf("pod(%s/%s) is not assigned to a node, skip cache it", ns, name)
 	}
-
-	oldObj, err := cm.storage.Get(key)
-	if err == nil && oldObj != nil {
-		oldRv, err := accessor.ResourceVersion(oldObj)
-		if err != nil {
-			klog.Errorf("failed to get old object resource version for %s, %v", key, err)
-			return err
-		}
-
-		newRv, err := accessor.ResourceVersion(obj)
-		if err != nil {
-			klog.Errorf("failed to get new object resource version for %s, %v", key, err)
-			return err
-		}
-
-		oldRvInt, _ := strconv.Atoi(oldRv)
-		newRvInt, _ := strconv.Atoi(newRv)
-		if newRvInt <= oldRvInt { // resource version is incremented or not
-			return nil
-		}
-
-		return cm.storage.Update(key, obj)
-	} else if os.IsNotExist(err) || oldObj == nil {
-		return cm.storage.Create(key, obj)
-	} else {
-		if err != storage.ErrStorageAccessConflict {
+	newRv, err := accessor.ResourceVersion(obj)
+	if err != nil {
+		klog.Errorf("failed to get new object resource version for %s, %v", key, err)
+		return err
+	}
+	newRvInt, _ := strconv.ParseUint(newRv, 10, 64)
+	// storage.Update takes the responsibility of checking the resource version
+	_, err = cm.storage.Update(key, obj, newRvInt, false)
+	if err != nil {
+		if err == storage.ErrStorageNotFound {
+			return cm.storage.Create(key, obj)
+		} else if err != storage.ErrStorageAccessConflict {
 			return cm.storage.Create(key, obj)
 		}
 		return err
 	}
+	return nil
 }
 
 // isNotAssignedPod check pod is assigned to node or not

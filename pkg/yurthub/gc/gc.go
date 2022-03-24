@@ -19,6 +19,7 @@ package gc
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -119,7 +120,7 @@ func (m *GCManager) gcPodsWhenRestart() error {
 		name := podList.Items[i].Name
 		ns := podList.Items[i].Namespace
 
-		key, _ := util.KeyFunc("kubelet", "pods", ns, name)
+		key := filepath.Join("kubelet", "pods", ns, name)
 		currentPodKeys[key] = struct{}{}
 	}
 	klog.V(2).Infof("list all of pod that on the node: total: %d", len(currentPodKeys))

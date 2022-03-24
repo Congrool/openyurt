@@ -35,6 +35,12 @@ var ErrKeyIsEmpty = errors.New("specified key is empty")
 // ErrRootKeyInvalid is an error for root key is invalid
 var ErrRootKeyInvalid = errors.New("root key is invalid")
 
+// ErrKeyExists indicates that this key has already existed
+var ErrKeyExists = errors.New("specified key has already existed")
+
+// ErrUpdateConflict indicates that using an old object to update a new object
+var ErrUpdateConflict = errors.New("update conflict for old resource version")
+
 // Store is an interface for caching data into backend storage
 type Store interface {
 	Create(key string, contents []byte) error
@@ -42,7 +48,7 @@ type Store interface {
 	Get(key string) ([]byte, error)
 	ListKeys(key string) ([]string, error)
 	List(key string) ([][]byte, error)
-	Update(key string, contents []byte) error
+	Update(key string, contents []byte, rv uint64, force bool) ([]byte, error)
 	Replace(rootKey string, contents map[string][]byte) error
 	DeleteCollection(rootKey string) error
 }

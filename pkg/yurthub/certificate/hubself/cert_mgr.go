@@ -602,8 +602,13 @@ func (ycm *yurtHubCertManager) createBootstrapConfFile(joinToken string) error {
 		return err
 	}
 
-	err = ycm.bootstrapConfStore.Update(bootstrapConfigFileName, content)
+	err = ycm.bootstrapConfStore.Create(bootstrapConfigFileName, content)
 	if err != nil {
+		if err == storage.ErrKeyExists {
+			klog.Info("find bootstrap conf file already exists, try to update it")
+			_, err = ycm.bootstrapConfStore.Update(bootstrapConfigFileName, content, 0, true)
+			return err
+		}
 		klog.Errorf("could not create bootstrap conf file(%s), %v", ycm.getBootstrapConfFile(), err)
 		return err
 	}
@@ -643,9 +648,17 @@ func (ycm *yurtHubCertManager) updateBootstrapConfFile(joinToken string) error {
 		return err
 	}
 
-	err = ycm.bootstrapConfStore.Update(bootstrapConfigFileName, content)
+	_, err = ycm.bootstrapConfStore.Update(bootstrapConfigFileName, content, 0, true)
 	if err != nil {
-		klog.Errorf("could not update bootstrap config, %v", err)
+		if err == storage.ErrStorageNotFound {
+			// try to create a new one
+			klog.Warning("bootstrapConfigFile is deleted by accident, create a new one")
+			if err := ycm.bootstrapConfStore.Create(bootstrapConfigFileName, content); err != nil {
+				klog.Errorf("failed to create bootstrapConfigFile, %v", err)
+				return err
+			}
+			return nil
+		}
 		return err
 	}
 

@@ -38,11 +38,11 @@ type StorageWrapper interface {
 	Get(key string) (runtime.Object, error)
 	ListKeys(key string) ([]string, error)
 	List(key string) ([]runtime.Object, error)
-	Update(key string, obj runtime.Object) error
+	Update(key string, obj runtime.Object, rv uint64, force bool) (runtime.Object, error)
 	Replace(rootKey string, objs map[string]runtime.Object) error
 	DeleteCollection(rootKey string) error
 	GetRaw(key string) ([]byte, error)
-	UpdateRaw(key string, contents []byte) error
+	UpdateRaw(key string, contents []byte, rv uint64) ([]byte, error)
 }
 
 type storageWrapper struct {
@@ -196,15 +196,34 @@ func (sw *storageWrapper) List(key string) ([]runtime.Object, error) {
 }
 
 // Update update runtime object in backend storage
-func (sw *storageWrapper) Update(key string, obj runtime.Object) error {
+func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, force bool) (runtime.Object, error) {
 	var buf bytes.Buffer
 	if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
 		klog.Errorf("failed to encode object in update for %s, %v", key, err)
-		return err
+		return nil, err
 	}
 
-	if err := sw.UpdateRaw(key, buf.Bytes()); err != nil {
-		return err
+	content, err := sw.UpdateRaw(key, buf.Bytes(), rv)
+	if err != nil {
+		if err == storage.ErrUpdateConflict {
+			out := new(unstructured.Unstructured)
+			gvk := obj.GetObjectKind().GroupVersionKind()
+			if scheme.Scheme.Recognizes(gvk) {
+				out = nil
+			}
+			curobj, _, err := sw.backendSerializer.Decode(content, nil, out)
+			if err != nil {
+				klog.Errorf("failed to decode content for %s, %v", key, err)
+				return nil, err
+			}
+			if isCacheKey(key) {
+				sw.Lock()
+				sw.cache[key] = curobj
+				sw.Unlock()
+			}
+			return curobj, nil
+		}
+		return nil, err
 	}
 
 	if isCacheKey(key) {
@@ -213,7 +232,7 @@ func (sw *storageWrapper) Update(key string, obj runtime.Object) error {
 		sw.Unlock()
 	}
 
-	return nil
+	return nil, nil
 }
 
 // Replace will delete the old objects, and use the given objs instead.
@@ -244,8 +263,8 @@ func (sw *storageWrapper) GetRaw(key string) ([]byte, error) {
 }
 
 // UpdateRaw update contents(byte date) for specified key
-func (sw *storageWrapper) UpdateRaw(key string, contents []byte) error {
-	return sw.store.Update(key, contents)
+func (sw *storageWrapper) UpdateRaw(key string, contents []byte, rv uint64) ([]byte, error) {
+	return sw.store.Update(key, contents, rv, false)
 }
 
 // isCacheKey verify runtime object is cached for specified key.

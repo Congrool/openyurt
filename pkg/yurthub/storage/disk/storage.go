@@ -22,9 +22,15 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
@@ -38,6 +44,7 @@ const (
 type diskStorage struct {
 	baseDir          string
 	keyPendingStatus map[string]struct{}
+	serializer       runtime.Serializer
 	sync.Mutex
 }
 
@@ -56,6 +63,7 @@ func NewDiskStorage(dir string) (storage.Store, error) {
 	ds := &diskStorage{
 		keyPendingStatus: make(map[string]struct{}),
 		baseDir:          dir,
+		serializer:       json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
 	}
 
 	err := ds.Recover("")
@@ -88,7 +96,7 @@ func (ds *diskStorage) Create(key string, contents []byte) error {
 			}
 			return err
 		} else if info.IsDir() {
-			return nil
+			return storage.ErrKeyExists
 		} else {
 			return storage.ErrKeyHasNoContent
 		}
@@ -115,6 +123,9 @@ func (ds *diskStorage) create(key string, contents []byte) error {
 		}
 	} else {
 		// dir for key is already exist
+		if _, err := os.Stat(keyPath); err == nil || err != os.ErrNotExist {
+			return storage.ErrKeyExists
+		}
 	}
 
 	// open file with synchronous I/O
@@ -315,34 +326,56 @@ func (ds *diskStorage) List(key string) ([][]byte, error) {
 }
 
 // Update will update local file that specified by key with contents
-func (ds *diskStorage) Update(key string, contents []byte) error {
+func (ds *diskStorage) Update(key string, contents []byte, rv uint64, force bool) ([]byte, error) {
 	if key == "" {
-		return storage.ErrKeyIsEmpty
+		return nil, storage.ErrKeyIsEmpty
 	} else if len(contents) == 0 {
-		return storage.ErrKeyHasNoContent
+		return nil, storage.ErrKeyHasNoContent
 	}
 
 	if !ds.lockKey(key) {
-		return storage.ErrStorageAccessConflict
+		return nil, storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
 
+	curContent, err := ds.get(filepath.Join(ds.baseDir, key))
+	if err != nil {
+		return nil, err
+	}
+	klog.V(4).Infof("find key %s exist when updating it", key)
+	if !force {
+		// check resource version
+		unstructuredObj := &unstructured.Unstructured{}
+		curObj, _, err := ds.serializer.Decode(curContent, nil, unstructuredObj)
+		if err != nil {
+			klog.Errorf("failed to decode obj at %s, %v", key, err)
+			return nil, err
+		}
+		curRv, err := ObjectResourceVersion(curObj)
+		if err != nil {
+			klog.Errorf("failed to get rv of obj exists at %s, %v", key, err)
+			return nil, err
+		}
+		if rv < curRv {
+			klog.V(4).Infof("find that obj with key %s has higher rv, do not update it", key)
+			return nil, storage.ErrUpdateConflict
+		}
+	}
+
 	// 1. create new file with tmpKey
 	tmpKey := getTmpKey(key)
-	err := ds.create(tmpKey, contents)
-	if err != nil {
-		return err
+	if err := ds.create(tmpKey, contents); err != nil {
+		return nil, err
 	}
 
 	// 2. delete old file by key
-	err = ds.delete(key)
-	if err != nil {
+	if err := ds.delete(key); err != nil {
 		ds.delete(tmpKey)
-		return err
+		return nil, err
 	}
 
 	// 3. rename tmpKey file to key file
-	return os.Rename(filepath.Join(ds.baseDir, tmpKey), filepath.Join(ds.baseDir, key))
+	return nil, os.Rename(filepath.Join(ds.baseDir, tmpKey), filepath.Join(ds.baseDir, key))
 }
 
 // Replace will delete all files under rootKey dir and create new files with contents.
@@ -505,4 +538,16 @@ func isTmpFile(path string) bool {
 func getKey(tmpKey string) string {
 	dir, file := filepath.Split(tmpKey)
 	return filepath.Join(dir, strings.TrimPrefix(file, tmpPrefix))
+}
+
+func ObjectResourceVersion(obj runtime.Object) (uint64, error) {
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return 0, err
+	}
+	version := accessor.GetResourceVersion()
+	if len(version) == 0 {
+		return 0, nil
+	}
+	return strconv.ParseUint(version, 10, 64)
 }
