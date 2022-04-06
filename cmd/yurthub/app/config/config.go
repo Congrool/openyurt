@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -46,7 +47,9 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter/servicetopology"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/meta"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/serializer"
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/factory"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/poolspirit"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 	yurtcorev1alpha1 "github.com/openyurtio/yurt-app-manager-api/pkg/yurtappmanager/apis/apps/v1alpha1"
 	yurtclientset "github.com/openyurtio/yurt-app-manager-api/pkg/yurtappmanager/client/clientset/versioned"
@@ -64,6 +67,10 @@ type YurtHubConfiguration struct {
 	YurtHubProxyServerSecureAddr      string
 	YurtHubProxyServerDummyAddr       string
 	YurtHubProxyServerSecureDummyAddr string
+	PoolSpiritAddr                    string
+	PoolSpiritCertFile                string
+	PoolSpiritKeyFile                 string
+	PoolSpiritCaFile                  string
 	GCFrequency                       int
 	CertMgrMode                       string
 	KubeletRootCAFilePath             string
@@ -80,6 +87,7 @@ type YurtHubConfiguration struct {
 	EnableIptables                    bool
 	HubAgentDummyIfName               string
 	StorageWrapper                    cachemanager.StorageWrapper
+	StorageKeyFunc                    storage.KeyFunc
 	SerializerManager                 *serializer.SerializerManager
 	RESTMapperManager                 *meta.RESTMapperManager
 	TLSConfig                         *tls.Config
@@ -91,7 +99,7 @@ type YurtHubConfiguration struct {
 }
 
 // Complete converts *options.YurtHubOptions to *YurtHubConfiguration
-func Complete(options *options.YurtHubOptions) (*YurtHubConfiguration, error) {
+func Complete(ctx context.Context, options *options.YurtHubOptions) (*YurtHubConfiguration, error) {
 	us, err := parseRemoteServers(options.ServerAddr)
 	if err != nil {
 		return nil, err
@@ -104,11 +112,22 @@ func Complete(options *options.YurtHubOptions) (*YurtHubConfiguration, error) {
 		}
 	}
 
-	storageManager, err := factory.CreateStorage(options.DiskCachePath)
+	var storageManager storage.Store
+	if !options.EnablePoolSpirit {
+		storageManager, err = disk.NewDiskStorage(options.DiskCachePath)
+	} else {
+		storageManager, err = poolspirit.NewStorage(ctx,
+			options.PoolSpiritPrefix,
+			options.PoolSpiritEtcdAddr,
+			options.PoolSpiritCertFile,
+			options.PoolSpiritKeyFile,
+			options.PoolSpiritCAFile)
+	}
 	if err != nil {
 		klog.Errorf("could not create storage manager, %v", err)
 		return nil, err
 	}
+	storageKeyFunc := storageManager.GetKeyFunc()
 	storageWrapper := cachemanager.NewStorageWrapper(storageManager)
 	serializerManager := serializer.NewSerializerManager()
 	restMapperManager := meta.NewRESTMapperManager(storageManager)
@@ -178,6 +197,7 @@ func Complete(options *options.YurtHubOptions) (*YurtHubConfiguration, error) {
 		HubAgentDummyIfName:               options.HubAgentDummyIfName,
 		WorkingMode:                       workingMode,
 		StorageWrapper:                    storageWrapper,
+		StorageKeyFunc:                    storageKeyFunc,
 		SerializerManager:                 serializerManager,
 		RESTMapperManager:                 restMapperManager,
 		SharedFactory:                     sharedFactory,

@@ -17,6 +17,7 @@ limitations under the License.
 package app
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -36,13 +37,12 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/network"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy"
 	"github.com/openyurtio/openyurt/pkg/yurthub/server"
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
 // NewCmdStartYurtHub creates a *cobra.Command object with default parameters
-func NewCmdStartYurtHub(stopCh <-chan struct{}) *cobra.Command {
+func NewCmdStartYurtHub(ctx context.Context) *cobra.Command {
 	yurtHubOptions := options.NewYurtHubOptions()
 
 	cmd := &cobra.Command{
@@ -63,13 +63,13 @@ func NewCmdStartYurtHub(stopCh <-chan struct{}) *cobra.Command {
 				klog.Fatalf("validate options: %v", err)
 			}
 
-			yurtHubCfg, err := config.Complete(yurtHubOptions)
+			yurtHubCfg, err := config.Complete(ctx, yurtHubOptions)
 			if err != nil {
 				klog.Fatalf("complete %s configuration error, %v", projectinfo.GetHubName(), err)
 			}
 			klog.Infof("%s cfg: %#+v", projectinfo.GetHubName(), yurtHubCfg)
 
-			if err := Run(yurtHubCfg, stopCh); err != nil {
+			if err := Run(yurtHubCfg, ctx.Done()); err != nil {
 				klog.Fatalf("run %s failed, %v", projectinfo.GetHubName(), err)
 			}
 		},
@@ -134,7 +134,7 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 	var cacheMgr cachemanager.CacheManager
 	if cfg.WorkingMode == util.WorkingModeEdge {
 		klog.Infof("%d. new cache manager with storage wrapper and serializer manager", trace)
-		cacheMgr, err = cachemanager.NewCacheManager(cfg.StorageWrapper, disk.KeyFunc, cfg.SerializerManager, cfg.RESTMapperManager, cfg.SharedFactory)
+		cacheMgr, err = cachemanager.NewCacheManager(cfg.StorageWrapper, cfg.StorageKeyFunc, cfg.SerializerManager, cfg.RESTMapperManager, cfg.SharedFactory)
 		if err != nil {
 			return fmt.Errorf("could not new cache manager, %v", err)
 		}

@@ -17,6 +17,7 @@ limitations under the License.
 package storage
 
 import (
+	"context"
 	"errors"
 )
 
@@ -41,6 +42,8 @@ var ErrKeyExists = errors.New("specified key has already existed")
 // ErrUpdateConflict indicates that using an old object to update a new object
 var ErrUpdateConflict = errors.New("update conflict for old resource version")
 
+type KeyFunc func(context.Context, string, string) (string, error)
+
 // Store is an interface for caching data into backend storage
 type Store interface {
 	Create(key string, contents []byte) error
@@ -51,4 +54,5 @@ type Store interface {
 	Update(key string, contents []byte, rv uint64, force bool) ([]byte, error)
 	Replace(rootKey string, contents map[string][]byte) error
 	DeleteCollection(rootKey string) error
+	GetKeyFunc() KeyFunc
 }

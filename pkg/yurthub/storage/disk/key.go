@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 )
+
+func (ds *diskStorage) GetKeyFunc() storage.KeyFunc {
+	return ds.KeyFunc
+}
 
 // KeyFunc will try to use namespace and name in ctx. If namespace and name are
 // provided in parameters, it will use them instead.
@@ -15,7 +20,7 @@ import (
 // /<Component>/<Resource>/<Namespace>/<Name>, or
 // /<Component>/<Resource>/<Name>, if there's no namespace,
 // /<Component>/<Resource>, if it's a list object.
-func KeyFunc(ctx context.Context, namespace, name string) (string, error) {
+func (ds *diskStorage) KeyFunc(ctx context.Context, namespace, name string) (string, error) {
 	info, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok || info == nil {
 		return "", fmt.Errorf("failed to get request info")

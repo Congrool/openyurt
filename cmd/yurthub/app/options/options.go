@@ -64,6 +64,12 @@ type YurtHubOptions struct {
 	DiskCachePath             string
 	AccessServerThroughHub    bool
 	EnableResourceFilter      bool
+	EnablePoolSpirit          bool
+	PoolSpiritPrefix          string
+	PoolSpiritEtcdAddr        string
+	PoolSpiritCertFile        string
+	PoolSpiritKeyFile         string
+	PoolSpiritCAFile          string
 	DisabledResourceFilters   []string
 	WorkingMode               string
 	KubeletHealthGracePeriod  time.Duration
@@ -94,6 +100,8 @@ func NewYurtHubOptions() *YurtHubOptions {
 		DiskCachePath:             disk.CacheBaseDir,
 		AccessServerThroughHub:    true,
 		EnableResourceFilter:      true,
+		EnablePoolSpirit:          true,
+		PoolSpiritPrefix:          "/registry",
 		DisabledResourceFilters:   make([]string, 0),
 		WorkingMode:               string(util.WorkingModeEdge),
 		KubeletHealthGracePeriod:  time.Second * 40,
@@ -159,6 +167,12 @@ func (o *YurtHubOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.DiskCachePath, "disk-cache-path", o.DiskCachePath, "the path for kubernetes to storage metadata")
 	fs.BoolVar(&o.AccessServerThroughHub, "access-server-through-hub", o.AccessServerThroughHub, "enable pods access kube-apiserver through yurthub or not")
 	fs.BoolVar(&o.EnableResourceFilter, "enable-resource-filter", o.EnableResourceFilter, "enable to filter response that comes back from reverse proxy")
+	fs.BoolVar(&o.EnablePoolSpirit, "enable-pool-spirit", o.EnablePoolSpirit, "enable to use pool spirit component, which serves as a nodepool-scope cache")
+	fs.StringVar(&o.PoolSpiritPrefix, "pool-spirit-prefix", o.PoolSpiritPrefix, "the prefix of prepend to all resource paths in pool spirit")
+	fs.StringVar(&o.PoolSpiritEtcdAddr, "pool-spirit-etcd-addr", o.PoolSpiritEtcdAddr, "the address of etcd in pool spirit")
+	fs.StringVar(&o.PoolSpiritCertFile, "pool-spirit-cert-file", o.PoolSpiritCertFile, "the cert file path which is used to connect to etcd in pool-spirit")
+	fs.StringVar(&o.PoolSpiritCAFile, "pool-spirit-ca-file", o.PoolSpiritCAFile, "the ca file path which is used to connect to etcd in pool-spirit")
+	fs.StringVar(&o.PoolSpiritKeyFile, "pool-spirit-key-file", o.PoolSpiritKeyFile, "the key file path which is used to connect to etcd in pool-spirit")
 	fs.StringSliceVar(&o.DisabledResourceFilters, "disabled-resource-filters", o.DisabledResourceFilters, "disable resource filters to handle response")
 	fs.StringVar(&o.NodePoolName, "nodepool-name", o.NodePoolName, "the name of node pool that runs hub agent")
 	fs.StringVar(&o.WorkingMode, "working-mode", o.WorkingMode, "the working mode of yurthub(edge, cloud).")
