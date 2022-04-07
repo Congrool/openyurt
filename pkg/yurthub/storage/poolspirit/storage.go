@@ -94,6 +94,7 @@ func (s *Storage) Update(key string, content []byte, rv uint64, force bool) ([]b
 
 	key = s.completeKey(key)
 	txnResp, err := s.client.KV.Txn(s.ctx).If(
+		// check if the key exists and if its version is older
 		// TODO:
 		// it is not recommended to use ineqality for resource version
 		// find a better way to check whether this obj is new or old
@@ -106,7 +107,7 @@ func (s *Storage) Update(key string, content []byte, rv uint64, force bool) ([]b
 		// Possibly two cases here:
 		// 1. key do not exist
 		// 2. key exists with a higher rv
-		// We can distinguish them by one OpGet. If it gets no value back, it's case 1.
+		// We can distinguish them by OpGet. If it gets no value back, it's case 1.
 		// Otherwise is case 2.
 		clientv3.OpGet(key),
 	).Commit()
@@ -249,15 +250,16 @@ func (s *Storage) Replace(rootKey string, contents map[string][]byte) error {
 	}
 
 	txnResp, err := s.client.Txn(s.ctx).If(
-		// if keys with prefix of rootKey exist
-		clientv3.Compare(clientv3.ModRevision(rootKey).WithPrefix(), ">", 0),
-		// if rootKey itself exists
-		clientv3.Compare(clientv3.ModRevision(strings.TrimSuffix(rootKey, "/")), ">", 0),
+		// if keys with prefix of rootKey do not exist
+		clientv3.Compare(clientv3.ModRevision(rootKey).WithPrefix(), "=", 0),
+		// if rootKey itself does not exist
+		clientv3.Compare(clientv3.ModRevision(strings.TrimSuffix(rootKey, "/")), "=", 0),
 	).Then(
-		// rootKey and keys with prefix of rootKey do not exist, no need to delete them
+		// RootKey and keys with prefix of rootKey do not exist, no need to delete them.
+		// So, directly put new keys.
 		ops[2:]...,
 	).Else(
-		// delete rootKey and keys with prefix of rootKey
+		// Delete rootKey and keys with prefix of rootKey and put new keys.
 		ops...,
 	).Commit()
 
@@ -288,9 +290,14 @@ func (s *Storage) DeleteCollection(rootKey string) error {
 	)
 
 	txnResp, err := s.client.Txn(s.ctx).If(
-		clientv3.Compare(clientv3.ModRevision(rootKey).WithPrefix(), ">", 0),
-		clientv3.Compare(clientv3.ModRevision(strings.TrimSuffix(rootKey, "/")), ">", 0),
+		// if keys with prefix of rootKey do not exist
+		clientv3.Compare(clientv3.ModRevision(rootKey).WithPrefix(), "=", 0),
+		// if rootKey itself does not exist
+		clientv3.Compare(clientv3.ModRevision(strings.TrimSuffix(rootKey, "/")), "=", 0),
 	).Then(
+	// do nothing
+	).Else(
+		// delete keys with the prefix of rootkey and the rootkey itself
 		ops...,
 	).Commit()
 
