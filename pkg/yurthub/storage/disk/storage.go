@@ -46,6 +46,7 @@ type diskStorage struct {
 	keyPendingStatus map[string]struct{}
 	serializer       runtime.Serializer
 	sync.Mutex
+	listSelectorCollector map[string]string
 }
 
 // NewDiskStorage creates a storage.Store for caching data into local disk
@@ -378,11 +379,15 @@ func (ds *diskStorage) Update(key string, contents []byte, rv uint64, force bool
 	return nil, os.Rename(filepath.Join(ds.baseDir, tmpKey), filepath.Join(ds.baseDir, key))
 }
 
-// Replace will delete all files under rootKey dir and create new files with contents.
+// UpdateList will update files under rootKey dir with new files provided in contents.
 // Note: when the contents are empty and the dir already exists, the create function will clean the current dir
-func (ds *diskStorage) Replace(rootKey string, contents map[string][]byte, _ map[string]int64) error {
+func (ds *diskStorage) UpdateList(rootKey string, contents map[string][]byte, _ map[string]int64, selector string) error {
 	if rootKey == "" {
 		return storage.ErrKeyIsEmpty
+	}
+
+	if !ds.canUpdateList(rootKey, selector) {
+		return nil
 	}
 
 	for key := range contents {
@@ -513,6 +518,38 @@ func (ds *diskStorage) lockKey(key string) bool {
 		}
 	}
 	ds.keyPendingStatus[key] = struct{}{}
+	return true
+}
+
+func (ds *diskStorage) canUpdateList(key string, selector string) bool {
+	ds.Lock()
+	defer ds.Unlock()
+	if oldSelector, ok := ds.listSelectorCollector[key]; ok {
+		if oldSelector != selector {
+			// list requests that have the same path but with different selector, for example:
+			// request1: http://{ip:port}/api/v1/default/pods?labelSelector=foo=bar
+			// request2: http://{ip:port}/api/v1/default/pods?labelSelector=foo2=bar2
+			// because func queryListObject() will get all pods for both requests instead of
+			// getting pods by request selector. so cache manager can not support same path list
+			// requests that has different selector.
+			klog.Warningf("list requests that have the same path but with different selector, skip cache for %s", key)
+			return false
+		}
+	} else {
+		// list requests that get the same resources but with different path, for example:
+		// request1: http://{ip/port}/api/v1/pods?fieldSelector=spec.nodeName=foo
+		// request2: http://{ip/port}/api/v1/default/pods?fieldSelector=spec.nodeName=foo
+		// because func queryListObject() will get all pods for both requests instead of
+		// getting pods by request selector. so cache manager can not support getting same resource
+		// list requests that has different path.
+		for k := range ds.listSelectorCollector {
+			if (len(k) > len(key) && strings.Contains(k, key)) || (len(k) < len(key) && strings.Contains(key, k)) {
+				klog.Warningf("list requests that get the same resources but with different path, skip cache for %s", key)
+				return false
+			}
+		}
+		ds.listSelectorCollector[key] = selector
+	}
 	return true
 }
 

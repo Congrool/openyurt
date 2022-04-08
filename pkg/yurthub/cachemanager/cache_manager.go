@@ -398,6 +398,7 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		// list all objects or with fieldselector/labelselector
 		rootKey, _ := cm.keyFunc(ctx, "", "")
 		objs := make(map[string]runtime.Object)
+		selector, _ := util.ListSelectorFrom(ctx)
 		for i := range items {
 			accessor.SetKind(items[i], kind)
 			accessor.SetAPIVersion(items[i], apiVersion)
@@ -411,7 +412,7 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 			objs[key] = items[i]
 		}
 		// if no objects in cloud cluster(objs is empty), it will clean the old files in the path of rootkey
-		return cm.storage.Replace(rootKey, objs)
+		return cm.storage.UpdateList(rootKey, objs, selector)
 	}
 }
 
@@ -579,38 +580,6 @@ func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 		return false
 	}
 
-	cm.Lock()
-	defer cm.Unlock()
-	if info.Verb == "list" && info.Name == "" {
-		key, _ := cm.keyFunc(ctx, "", "")
-		selector, _ := util.ListSelectorFrom(ctx)
-		if oldSelector, ok := cm.listSelectorCollector[key]; ok {
-			if oldSelector != selector {
-				// list requests that have the same path but with different selector, for example:
-				// request1: http://{ip:port}/api/v1/default/pods?labelSelector=foo=bar
-				// request2: http://{ip:port}/api/v1/default/pods?labelSelector=foo2=bar2
-				// because func queryListObject() will get all pods for both requests instead of
-				// getting pods by request selector. so cache manager can not support same path list
-				// requests that has different selector.
-				klog.Warningf("list requests that have the same path but with different selector, skip cache for %s", util.ReqString(req))
-				return false
-			}
-		} else {
-			// list requests that get the same resources but with different path, for example:
-			// request1: http://{ip/port}/api/v1/pods?fieldSelector=spec.nodeName=foo
-			// request2: http://{ip/port}/api/v1/default/pods?fieldSelector=spec.nodeName=foo
-			// because func queryListObject() will get all pods for both requests instead of
-			// getting pods by request selector. so cache manager can not support getting same resource
-			// list requests that has different path.
-			for k := range cm.listSelectorCollector {
-				if (len(k) > len(key) && strings.Contains(k, key)) || (len(k) < len(key) && strings.Contains(key, k)) {
-					klog.Warningf("list requests that get the same resources but with different path, skip cache for %s", util.ReqString(req))
-					return false
-				}
-			}
-			cm.listSelectorCollector[key] = selector
-		}
-	}
 	return true
 }
 

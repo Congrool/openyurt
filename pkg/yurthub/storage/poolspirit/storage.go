@@ -228,14 +228,7 @@ func (s *Storage) List(key string) ([][]byte, error) {
 	return values, nil
 }
 
-// TODO:
-// if we need the semantic of Replace?
-// it works in Local disk cache
-// however, is it neccessary for pool-scoped cache which will cause competition
-// among serval nodes.
-// Currently, we only update or put new key-value to the pool-scoped cache and
-// do not delete the existing keys.
-func (s *Storage) Replace(rootKey string, contents map[string][]byte, rvs map[string]int64) error {
+func (s *Storage) UpdateList(rootKey string, contents map[string][]byte, rvs map[string]int64, selector string) error {
 	if rootKey == "" {
 		return storage.ErrKeyIsEmpty
 	}
@@ -260,11 +253,11 @@ func (s *Storage) Replace(rootKey string, contents map[string][]byte, rvs map[st
 		rvCmp := clientv3.Compare(clientv3.ModRevision(k), "<", rv)
 		updateOp := clientv3.OpTxn([]clientv3.Cmp{rvCmp}, []clientv3.Op{putOp}, nil)
 		txnOp := clientv3.OpTxn(
-			// if key exist
+			// check if key exists
 			[]clientv3.Cmp{existCmp},
-			// not exist, then
+			// if key not exists, then
 			[]clientv3.Op{putOp},
-			// exist, else
+			// else
 			[]clientv3.Op{updateOp},
 		)
 		ops = append(ops, txnOp)

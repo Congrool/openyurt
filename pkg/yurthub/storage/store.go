@@ -53,10 +53,7 @@ type Store interface {
 	ListKeys(key string) ([]string, error)
 	List(key string) ([][]byte, error)
 	Update(key string, contents []byte, rv uint64, force bool) ([]byte, error)
-	// TODO: rename Replace
-	// maybe UpdateList is better
-	//
-	Replace(rootKey string, contents map[string][]byte, rvs map[string]int64) error
+	UpdateList(rootKey string, contents map[string][]byte, rvs map[string]int64, selector string) error
 	DeleteCollection(rootKey string) error
 	GetKeyFunc() KeyFunc
 }

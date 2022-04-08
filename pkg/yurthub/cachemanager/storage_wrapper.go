@@ -41,7 +41,7 @@ type StorageWrapper interface {
 	ListKeys(key string) ([]string, error)
 	List(key string) ([]runtime.Object, error)
 	Update(key string, obj runtime.Object, rv uint64, force bool) (runtime.Object, error)
-	Replace(rootKey string, objs map[string]runtime.Object) error
+	UpdateList(rootKey string, objs map[string]runtime.Object, selector string) error
 	DeleteCollection(rootKey string) error
 	GetRaw(key string) ([]byte, error)
 	UpdateRaw(key string, contents []byte, rv uint64) ([]byte, error)
@@ -237,9 +237,8 @@ func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, forc
 	return nil, nil
 }
 
-// TODO: update comment
-// Replace will delete the old objects, and use the given objs instead.
-func (sw *storageWrapper) Replace(rootKey string, objs map[string]runtime.Object) error {
+// UpdateList will use the provided new objs to update objs under the rootKey
+func (sw *storageWrapper) UpdateList(rootKey string, objs map[string]runtime.Object, selector string) error {
 	var buf bytes.Buffer
 	contents := make(map[string][]byte, len(objs))
 	rvs := make(map[string]int64, len(objs))
@@ -264,7 +263,7 @@ func (sw *storageWrapper) Replace(rootKey string, objs map[string]runtime.Object
 		buf.Reset()
 	}
 
-	return sw.store.Replace(rootKey, contents, rvs)
+	return sw.store.UpdateList(rootKey, contents, rvs, selector)
 }
 
 // DeleteCollection will delete all objects under rootKey
