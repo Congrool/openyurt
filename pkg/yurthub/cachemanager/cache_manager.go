@@ -163,6 +163,10 @@ func (cm *cacheManager) queryListObject(req *http.Request) (runtime.Object, erro
 		kind = gvk.Kind
 	}
 
+	// TODO:
+	// When using pool-scoped cache, labelselector and fieldselector should be considered
+	// Currently, all resources cached in the storeage will be fetched.
+	//
 	// If the GVR information is recognized, return list or empty list
 	objs, err := cm.storage.List(key)
 	if err != nil {

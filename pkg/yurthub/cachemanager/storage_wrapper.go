@@ -18,8 +18,10 @@ package cachemanager
 
 import (
 	"bytes"
+	"strconv"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -235,13 +237,26 @@ func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, forc
 	return nil, nil
 }
 
+// TODO: update comment
 // Replace will delete the old objects, and use the given objs instead.
 func (sw *storageWrapper) Replace(rootKey string, objs map[string]runtime.Object) error {
 	var buf bytes.Buffer
 	contents := make(map[string][]byte, len(objs))
+	rvs := make(map[string]int64, len(objs))
 	for key, obj := range objs {
 		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in update for %s, %v", key, err)
+			return err
+		}
+		accessor := meta.NewAccessor()
+		rv, err := accessor.ResourceVersion(obj)
+		if err != nil {
+			klog.Warningf("failed to get resource version for %s, %v, continue with 0", key, err)
+			rv = "0"
+		}
+		rvs[key], err = strconv.ParseInt(rv, 10, 64)
+		if err != nil {
+			klog.Errorf("failed to parse resource version for %s, rv is %s, %v", key, rv, err)
 			return err
 		}
 		contents[key] = make([]byte, len(buf.Bytes()))
@@ -249,7 +264,7 @@ func (sw *storageWrapper) Replace(rootKey string, objs map[string]runtime.Object
 		buf.Reset()
 	}
 
-	return sw.store.Replace(rootKey, contents)
+	return sw.store.Replace(rootKey, contents, rvs)
 }
 
 // DeleteCollection will delete all objects under rootKey

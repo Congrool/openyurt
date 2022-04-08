@@ -380,7 +380,7 @@ func (ds *diskStorage) Update(key string, contents []byte, rv uint64, force bool
 
 // Replace will delete all files under rootKey dir and create new files with contents.
 // Note: when the contents are empty and the dir already exists, the create function will clean the current dir
-func (ds *diskStorage) Replace(rootKey string, contents map[string][]byte) error {
+func (ds *diskStorage) Replace(rootKey string, contents map[string][]byte, _ map[string]int64) error {
 	if rootKey == "" {
 		return storage.ErrKeyIsEmpty
 	}
