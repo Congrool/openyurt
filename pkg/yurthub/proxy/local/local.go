@@ -59,6 +59,10 @@ func NewLocalProxy(cacheMgr manager.CacheManager, isHealthy IsHealthy) *LocalPro
 	}
 }
 
+func (lp *LocalProxy) IsHealthy() bool {
+	return true
+}
+
 // ServeHTTP implements http.Handler for LocalProxy
 func (lp *LocalProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var err error

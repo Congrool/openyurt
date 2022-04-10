@@ -28,18 +28,19 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/certificate/interfaces"
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter"
 	"github.com/openyurtio/openyurt/pkg/yurthub/healthchecker"
+	proxyutil "github.com/openyurtio/openyurt/pkg/yurthub/proxy/util"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
 type loadBalancerAlgo interface {
-	PickOne() *RemoteProxy
+	PickOne() *proxyutil.RemoteProxy
 	Name() string
 }
 
 type rrLoadBalancerAlgo struct {
 	sync.Mutex
-	backends []*RemoteProxy
+	backends []*proxyutil.RemoteProxy
 	next     int
 }
 
@@ -47,7 +48,7 @@ func (rr *rrLoadBalancerAlgo) Name() string {
 	return "rr algorithm"
 }
 
-func (rr *rrLoadBalancerAlgo) PickOne() *RemoteProxy {
+func (rr *rrLoadBalancerAlgo) PickOne() *proxyutil.RemoteProxy {
 	if len(rr.backends) == 0 {
 		return nil
 	} else if len(rr.backends) == 1 {
@@ -80,14 +81,14 @@ func (rr *rrLoadBalancerAlgo) PickOne() *RemoteProxy {
 
 type priorityLoadBalancerAlgo struct {
 	sync.Mutex
-	backends []*RemoteProxy
+	backends []*proxyutil.RemoteProxy
 }
 
 func (prio *priorityLoadBalancerAlgo) Name() string {
 	return "priority algorithm"
 }
 
-func (prio *priorityLoadBalancerAlgo) PickOne() *RemoteProxy {
+func (prio *priorityLoadBalancerAlgo) PickOne() *proxyutil.RemoteProxy {
 	if len(prio.backends) == 0 {
 		return nil
 	} else if len(prio.backends) == 1 {
@@ -108,15 +109,8 @@ func (prio *priorityLoadBalancerAlgo) PickOne() *RemoteProxy {
 	}
 }
 
-// LoadBalancer is an interface for proxying http request to remote server
-// based on the load balance mode(round-robin or priority)
-type LoadBalancer interface {
-	IsHealthy() bool
-	ServeHTTP(rw http.ResponseWriter, req *http.Request)
-}
-
-type loadBalancer struct {
-	backends    []*RemoteProxy
+type LoadBalancer struct {
+	backends    []*proxyutil.RemoteProxy
 	algo        loadBalancerAlgo
 	certManager interfaces.YurtCertificateManager
 }
@@ -130,10 +124,10 @@ func NewLoadBalancer(
 	healthChecker healthchecker.HealthChecker,
 	certManager interfaces.YurtCertificateManager,
 	filterChain filter.Interface,
-	stopCh <-chan struct{}) (LoadBalancer, error) {
-	backends := make([]*RemoteProxy, 0, len(remoteServers))
+	stopCh <-chan struct{}) (*LoadBalancer, error) {
+	backends := make([]*proxyutil.RemoteProxy, 0, len(remoteServers))
 	for i := range remoteServers {
-		b, err := NewRemoteProxy(remoteServers[i], cacheMgr, transportMgr, healthChecker, filterChain, stopCh)
+		b, err := proxyutil.NewRemoteProxy(remoteServers[i], cacheMgr, transportMgr, healthChecker, filterChain, stopCh)
 		if err != nil {
 			klog.Errorf("could not new proxy backend(%s), %v", remoteServers[i].String(), err)
 			continue
@@ -154,14 +148,14 @@ func NewLoadBalancer(
 		algo = &rrLoadBalancerAlgo{backends: backends}
 	}
 
-	return &loadBalancer{
+	return &LoadBalancer{
 		backends:    backends,
 		algo:        algo,
 		certManager: certManager,
 	}, nil
 }
 
-func (lb *loadBalancer) IsHealthy() bool {
+func (lb *LoadBalancer) IsHealthy() bool {
 	// both certificate is not expired and
 	// have at least one healthy remote server,
 	// load balancer can proxy the request to
@@ -176,7 +170,7 @@ func (lb *loadBalancer) IsHealthy() bool {
 	return false
 }
 
-func (lb *loadBalancer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (lb *LoadBalancer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// pick a remote proxy based on the load balancing algorithm.
 	rp := lb.algo.PickOne()
 	if rp == nil {

@@ -17,6 +17,7 @@ limitations under the License.
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/certificate/interfaces"
 	"github.com/openyurtio/openyurt/pkg/yurthub/healthchecker"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/local"
+	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/pool"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/remote"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/util"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
@@ -37,13 +39,20 @@ import (
 )
 
 type yurtReverseProxy struct {
-	resolver            apirequest.RequestInfoResolver
-	loadBalancer        remote.LoadBalancer
-	checker             healthchecker.HealthChecker
-	localProxy          *local.LocalProxy
-	cacheMgr            cachemanager.CacheManager
-	maxRequestsInFlight int
-	stopCh              <-chan struct{}
+	resolver             apirequest.RequestInfoResolver
+	loadBalancer         Backend
+	checker              healthchecker.HealthChecker
+	localProxy           *local.LocalProxy
+	poolCoordinatorProxy *pool.PoolCoordinatorProxy
+	cacheMgr             cachemanager.CacheManager
+	maxRequestsInFlight  int
+	stopCh               <-chan struct{}
+}
+
+// Backend is an interface for proxying http request to a backend handler.
+type Backend interface {
+	IsHealthy() bool
+	ServeHTTP(rw http.ResponseWriter, req *http.Request)
 }
 
 // NewYurtReverseProxyHandler creates a http handler for proxying
@@ -73,21 +82,38 @@ func NewYurtReverseProxyHandler(
 		return nil, err
 	}
 
-	var localProxy *local.LocalProxy
-	// When yurthub is working in cloud mode, cacheMgr will be set to nil which means the local cache is disabled,
-	// so we don't need to create a LocalProxy.
+	// var localProxy *local.LocalProxy
+	// // When yurthub is working in cloud mode, cacheMgr will be set to nil which means the local cache is disabled,
+	// // so we don't need to create a LocalProxy.
+	// if cacheMgr != nil {
+	// 	localProxy = local.NewLocalProxy(cacheMgr, lb.IsHealthy)
+	// }
+
+	// TODO: ReverseProxyHandler should know which cacheMgr to use
+	var poolCoordinatorProxy *pool.PoolCoordinatorProxy
 	if cacheMgr != nil {
-		localProxy = local.NewLocalProxy(cacheMgr, lb.IsHealthy)
+		proxy, err := pool.NewPoolCoordinatorProxy(
+			yurtHubCfg.PoolSpiritServerAddr,
+			cacheMgr,
+			transportMgr,
+			healthChecker,
+			certManager,
+			stopCh)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create pool-coordinator proxy, %v", err)
+		}
+		poolCoordinatorProxy = proxy
 	}
 
 	yurtProxy := &yurtReverseProxy{
-		resolver:            resolver,
-		loadBalancer:        lb,
-		checker:             healthChecker,
-		localProxy:          localProxy,
-		cacheMgr:            cacheMgr,
-		maxRequestsInFlight: yurtHubCfg.MaxRequestInFlight,
-		stopCh:              stopCh,
+		resolver:             resolver,
+		loadBalancer:         lb,
+		checker:              healthChecker,
+		localProxy:           nil,
+		poolCoordinatorProxy: poolCoordinatorProxy,
+		cacheMgr:             cacheMgr,
+		maxRequestsInFlight:  yurtHubCfg.MaxRequestInFlight,
+		stopCh:               stopCh,
 	}
 
 	return yurtProxy.buildHandlerChain(yurtProxy), nil
@@ -110,13 +136,47 @@ func (p *yurtReverseProxy) buildHandlerChain(handler http.Handler) http.Handler 
 }
 
 func (p *yurtReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	isKubeletLeaseReq := hubutil.IsKubeletLeaseReq(req)
-	if !isKubeletLeaseReq && p.loadBalancer.IsHealthy() || p.localProxy == nil {
-		p.loadBalancer.ServeHTTP(rw, req)
-	} else {
-		if isKubeletLeaseReq {
-			p.checker.UpdateLastKubeletLeaseReqTime(time.Now())
+	if hubutil.IsKubeletLeaseReq(req) {
+		p.handleKubeletLease(rw, req)
+		return
+	}
+
+	// The priority is LoadBalancer > PoolCoordiantorProxy > LocalProxy.
+	// The enqueue order is also the query order.
+	handlers := []Backend{p.loadBalancer}
+	if p.poolCoordinatorProxy != nil {
+		handlers = append(handlers, p.poolCoordinatorProxy)
+	}
+	if p.localProxy != nil {
+		handlers = append(handlers, p.localProxy)
+	}
+
+	for _, h := range handlers {
+		if h.IsHealthy() {
+			h.ServeHTTP(rw, req)
+			return
 		}
+	}
+
+	// no handler is healthy
+	err := fmt.Errorf("no handler is healthy")
+	hubutil.Err(err, rw, req)
+}
+
+func (p *yurtReverseProxy) handleKubeletLease(rw http.ResponseWriter, req *http.Request) {
+	// In edge mode: the health checker will send the kubelet lease
+	// In cloud mode: the health checker is fake, and the kubelet lease
+	// request should be proxyed
+	p.checker.UpdateLastKubeletLeaseReqTime(time.Now())
+	if p.poolCoordinatorProxy != nil {
+		// TODO: pool-coordinator cannot handle the request currently.
+		p.poolCoordinatorProxy.ServeHTTP(rw, req)
+	} else if p.localProxy != nil {
 		p.localProxy.ServeHTTP(rw, req)
+	} else {
+		// Only in cloud mode pool-coordiantor proxy and
+		// localproxy can both be nil. So we should proxy the
+		// kubelet lease request with lb.
+		p.loadBalancer.ServeHTTP(rw, req)
 	}
 }

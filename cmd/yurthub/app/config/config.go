@@ -67,7 +67,8 @@ type YurtHubConfiguration struct {
 	YurtHubProxyServerSecureAddr      string
 	YurtHubProxyServerDummyAddr       string
 	YurtHubProxyServerSecureDummyAddr string
-	PoolSpiritAddr                    string
+	PoolSpiritServerAddr              *url.URL
+	PoolSpiritEtcdAddr                *url.URL
 	PoolSpiritCertFile                string
 	PoolSpiritKeyFile                 string
 	PoolSpiritCaFile                  string
@@ -112,16 +113,32 @@ func Complete(ctx context.Context, options *options.YurtHubOptions) (*YurtHubCon
 		}
 	}
 
+	poolcoordinatorServerAddr, err := url.Parse(options.PoolCoordinatorServerAddr)
+	if err != nil {
+		return nil, err
+	}
+	poolCoordinatorEtcdAddr, err := url.Parse(options.PoolCoordinatorEtcdAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	hubServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubPort)
+	proxyServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubProxyPort)
+	proxySecureServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubProxySecurePort)
+	proxyServerDummyAddr := net.JoinHostPort(options.HubAgentDummyIfIP, options.YurtHubProxyPort)
+	proxySecureServerDummyAddr := net.JoinHostPort(options.HubAgentDummyIfIP, options.YurtHubProxySecurePort)
+	workingMode := util.WorkingMode(options.WorkingMode)
+
 	var storageManager storage.Store
-	if !options.EnablePoolSpirit {
+	if !options.EnablePoolCoordinator {
 		storageManager, err = disk.NewDiskStorage(options.DiskCachePath)
 	} else {
 		storageManager, err = poolspirit.NewStorage(ctx,
-			options.PoolSpiritPrefix,
-			options.PoolSpiritEtcdAddr,
-			options.PoolSpiritCertFile,
-			options.PoolSpiritKeyFile,
-			options.PoolSpiritCAFile)
+			options.PoolCoordinatorPrefix,
+			poolCoordinatorEtcdAddr.String(),
+			options.PoolCoordinatorCertFile,
+			options.PoolCoordinatorKeyFile,
+			options.PoolCoordinatorCAFile)
 	}
 	if err != nil {
 		klog.Errorf("could not create storage manager, %v", err)
@@ -131,13 +148,6 @@ func Complete(ctx context.Context, options *options.YurtHubOptions) (*YurtHubCon
 	storageWrapper := cachemanager.NewStorageWrapper(storageManager)
 	serializerManager := serializer.NewSerializerManager()
 	restMapperManager := meta.NewRESTMapperManager(storageManager)
-
-	hubServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubPort)
-	proxyServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubProxyPort)
-	proxySecureServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubProxySecurePort)
-	proxyServerDummyAddr := net.JoinHostPort(options.HubAgentDummyIfIP, options.YurtHubProxyPort)
-	proxySecureServerDummyAddr := net.JoinHostPort(options.HubAgentDummyIfIP, options.YurtHubProxySecurePort)
-	workingMode := util.WorkingMode(options.WorkingMode)
 
 	var filterChain filter.Interface
 	var filters *filter.Filters
@@ -180,6 +190,8 @@ func Complete(ctx context.Context, options *options.YurtHubOptions) (*YurtHubCon
 		YurtHubProxyServerSecureAddr:      proxySecureServerAddr,
 		YurtHubProxyServerDummyAddr:       proxyServerDummyAddr,
 		YurtHubProxyServerSecureDummyAddr: proxySecureServerDummyAddr,
+		PoolSpiritServerAddr:              poolcoordinatorServerAddr,
+		PoolSpiritEtcdAddr:                poolCoordinatorEtcdAddr,
 		GCFrequency:                       options.GCFrequency,
 		CertMgrMode:                       options.CertMgrMode,
 		KubeletRootCAFilePath:             options.KubeletRootCAFilePath,
