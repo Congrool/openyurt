@@ -3,7 +3,6 @@ package poolspirit
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -63,11 +62,11 @@ func NewStorage(ctx context.Context, prefix, serverAddress, certFile, keyFile, c
 }
 
 func (s *Storage) Create(key string, content []byte) error {
+	klog.V(4).Infof("try to create key %s in pool-cache", key)
 	if err := validateKV(key, content); err != nil {
 		return err
 	}
 
-	key = s.completeKey(key)
 	txnResp, err := s.client.KV.Txn(s.ctx).If(
 		// check if this key exists
 		clientv3.Compare(clientv3.ModRevision(key), "=", 0),
@@ -83,7 +82,7 @@ func (s *Storage) Create(key string, content []byte) error {
 	if !txnResp.Succeeded {
 		return storage.ErrKeyExists
 	}
-	klog.V(4).Infof("%s has been created in etcd", key)
+	klog.V(4).Infof("%s has been created in pool-cache", key)
 	return nil
 }
 
@@ -91,11 +90,11 @@ func (s *Storage) Create(key string, content []byte) error {
 // do not use uint64
 // or check how does kubernetes use uint64
 func (s *Storage) Update(key string, content []byte, rv uint64, force bool) ([]byte, error) {
+	klog.V(4).Infof("try to update key %s in pool-cache", key)
 	if err := validateKV(key, content); err != nil {
 		return nil, err
 	}
 
-	key = s.completeKey(key)
 	txnResp, err := s.client.KV.Txn(s.ctx).If(
 		// check if the key exists and if its version is older
 		// TODO:
@@ -136,16 +135,16 @@ func (s *Storage) Update(key string, content []byte, rv uint64, force bool) ([]b
 		return getResp.Kvs[0].Value, storage.ErrUpdateConflict
 	}
 
-	klog.V(4).Infof("succeed to update key %s with rv %d", key, rv)
+	klog.V(4).Infof("succeed to update key %s in pool-cache with rv %d", key, rv)
 	return nil, nil
 }
 
 func (s *Storage) Delete(key string) error {
+	klog.V(4).Infof("try to delete key %s in pool-cache", key)
 	if key == "" {
 		return storage.ErrKeyIsEmpty
 	}
 
-	key = s.completeKey(key)
 	txnResp, err := s.client.Txn(s.ctx).If(
 		// check if the key exists
 		clientv3.Compare(clientv3.ModRevision(key), ">", 0),
@@ -161,15 +160,16 @@ func (s *Storage) Delete(key string) error {
 		return storage.ErrStorageNotFound
 	}
 
+	klog.V(4).Infof("succeed to delete key %s in pool-cache", key)
 	return nil
 }
 
 func (s *Storage) Get(key string) ([]byte, error) {
+	klog.V(2).Infof("try to get key %s in pool-cache", key)
 	if key == "" {
 		return nil, storage.ErrKeyIsEmpty
 	}
 
-	key = s.completeKey(key)
 	getResp, err := s.client.Get(s.ctx, key)
 	if err != nil {
 		return nil, err
@@ -182,11 +182,11 @@ func (s *Storage) Get(key string) ([]byte, error) {
 }
 
 func (s *Storage) ListKeys(key string) ([]string, error) {
+	klog.V(4).Infof("try to list keys under root key: %s from pool-cache", key)
 	if key == "" {
 		return nil, storage.ErrKeyIsEmpty
 	}
 
-	key = s.completeKey(key)
 	key = strings.TrimSuffix(key, "/") + "/"
 	getResp, err := s.client.Get(s.ctx, key, clientv3.WithPrefix(), clientv3.WithKeysOnly())
 	if err != nil {
@@ -203,15 +203,16 @@ func (s *Storage) ListKeys(key string) ([]string, error) {
 		keys = append(keys, string(kv.Key))
 	}
 
+	klog.V(4).Infof("succeed to list keys with root key %s from pool-cache", key)
 	return keys, nil
 }
 
 func (s *Storage) List(key string) ([][]byte, error) {
+	klog.V(4).Infof("try to list objs from pool-cache under key: %s", key)
 	if key == "" {
 		return nil, storage.ErrKeyIsEmpty
 	}
 
-	key = s.completeKey(key)
 	getResp, err := s.client.Get(s.ctx, key, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -225,18 +226,18 @@ func (s *Storage) List(key string) ([][]byte, error) {
 	for _, kv := range getResp.Kvs {
 		values = append(values, kv.Value)
 	}
+	klog.V(4).Infof("succeed to list objs under root key: %s from pool-cache", key)
 	return values, nil
 }
 
 func (s *Storage) UpdateList(rootKey string, contents map[string][]byte, rvs map[string]int64, selector string) error {
+	klog.V(4).Infof("try to update objs under rootKey: %s in pool-cache", rootKey)
 	if rootKey == "" {
 		return storage.ErrKeyIsEmpty
 	}
 
-	rootKey = s.completeKey(rootKey)
 	rootKey = strings.TrimSuffix(rootKey, "/") + "/"
 	for key := range contents {
-		key = s.completeKey(key)
 		if !strings.Contains(key, rootKey) {
 			return storage.ErrRootKeyInvalid
 		}
@@ -246,9 +247,7 @@ func (s *Storage) UpdateList(rootKey string, contents map[string][]byte, rvs map
 
 	for k, v := range contents {
 		rv := rvs[k]
-		k = s.completeKey(k)
-		k = strings.TrimSuffix(k, "/") + "/"
-		existCmp := clientv3.Compare(clientv3.ModRevision(k).WithPrefix(), "=", 0)
+		existCmp := clientv3.Compare(clientv3.ModRevision(k), "=", 0)
 		putOp := clientv3.OpPut(k, string(v))
 		rvCmp := clientv3.Compare(clientv3.ModRevision(k), "<", rv)
 		updateOp := clientv3.OpTxn([]clientv3.Cmp{rvCmp}, []clientv3.Op{putOp}, nil)
@@ -270,15 +269,16 @@ func (s *Storage) UpdateList(rootKey string, contents map[string][]byte, rvs map
 		return err
 	}
 
+	klog.V(4).Infof("succeed to update list under root key: %s in pool-cache", rootKey)
 	return nil
 }
 
 func (s *Storage) DeleteCollection(rootKey string) error {
+	klog.V(4).Infof("try to delete collection of rootKey: %s in pool-cache", rootKey)
 	if rootKey == "" {
 		return storage.ErrKeyIsEmpty
 	}
 
-	rootKey = s.completeKey(rootKey)
 	rootKey = strings.TrimSuffix(rootKey, "/") + "/"
 
 	ops := []clientv3.Op{}
@@ -306,14 +306,11 @@ func (s *Storage) DeleteCollection(rootKey string) error {
 	}
 
 	if !txnResp.Succeeded {
-		klog.V(4).Infof("keys with prefix of %s do not exist, skip deleting them", rootKey)
+		klog.V(4).Infof("keys with prefix of %s do not exist, skip deleting them in pool-cache", rootKey)
 	}
 
+	klog.V(4).Infof("succeed to delete objs under root key: %s in pool-cache", rootKey)
 	return nil
-}
-
-func (s *Storage) completeKey(key string) string {
-	return filepath.Join(s.prefix, key)
 }
 
 func validateKV(key string, content []byte) error {

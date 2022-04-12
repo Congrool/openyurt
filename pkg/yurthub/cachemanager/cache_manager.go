@@ -396,7 +396,10 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		return err
 	} else {
 		// list all objects or with fieldselector/labelselector
-		rootKey, _ := cm.keyFunc(ctx, "", "")
+		rootKey, err := cm.keyFunc(ctx, "", "")
+		if err != nil {
+			return fmt.Errorf("failed to get rootKey of requestInfo: %s, %v", util.ReqInfoString(info), err)
+		}
 		objs := make(map[string]runtime.Object)
 		selector, _ := util.ListSelectorFrom(ctx)
 		for i := range items {

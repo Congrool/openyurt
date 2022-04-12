@@ -17,9 +17,16 @@ func (s *Storage) GetKeyFunc() storage.KeyFunc {
 
 // KeyFunc will try to use namespace and name in ctx. If namespace and name are
 // provided in parameters, it will use them instead.
-// Key for pool-coordinator is
+// For signal object:
 // /<Prefix>/<Resource>/<Namespace>/<Name>, or
 // /<Prefix>/<Resource>/<Name>, if the obj is non-namespaced,
+//
+// For list object:
+// /<prefix>/<Resource>/<Namespace>, or
+// /<prefix>/<Resource>
+//
+// TODO: minions for node resource
+// Note: for node resource, <Resource> will be minons.
 func (s *Storage) KeyFunc(ctx context.Context, namespace, name string) (string, error) {
 	info, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok || info == nil {
@@ -29,6 +36,11 @@ func (s *Storage) KeyFunc(ctx context.Context, namespace, name string) (string, 
 	res := info.Resource
 	if res == "" {
 		return "", fmt.Errorf("failed to get resource")
+	}
+
+	if res == "nodes" {
+		// kubernetes stores minions instead of nodes in etcd
+		res = "minions"
 	}
 
 	prefix := s.prefix + "/" + res
@@ -67,9 +79,6 @@ func NamespaceKeyFunc(prefix string, namespace string, name string) (string, err
 	if len(namespace) == 0 {
 		return "", fmt.Errorf("namespace parameter required")
 	}
-	if len(name) == 0 {
-		return "", fmt.Errorf("name parameter required")
-	}
 	if msgs := path.IsValidPathSegmentName(name); len(msgs) != 0 {
 		return "", fmt.Errorf(fmt.Sprintf("Name parameter invalid: %q: %s", name, strings.Join(msgs, ";")))
 	}
@@ -80,9 +89,6 @@ func NamespaceKeyFunc(prefix string, namespace string, name string) (string, err
 // NoNamespaceKeyFunc is the default function for constructing storage paths
 // to a resource relative to the given prefix without a namespace.
 func NoNamespaceKeyFunc(prefix string, name string) (string, error) {
-	if len(name) == 0 {
-		return "", fmt.Errorf("name parameter required")
-	}
 	if msgs := path.IsValidPathSegmentName(name); len(msgs) != 0 {
 		return "", fmt.Errorf(fmt.Sprintf("name parameter invalid: %q: %s", name, strings.Join(msgs, ";")))
 	}

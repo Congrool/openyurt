@@ -208,10 +208,10 @@ func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, forc
 	content, err := sw.UpdateRaw(key, buf.Bytes(), rv)
 	if err != nil {
 		if err == storage.ErrUpdateConflict {
-			out := new(unstructured.Unstructured)
+			var out runtime.Object
 			gvk := obj.GetObjectKind().GroupVersionKind()
-			if scheme.Scheme.Recognizes(gvk) {
-				out = nil
+			if !scheme.Scheme.Recognizes(gvk) {
+				out = new(unstructured.Unstructured)
 			}
 			curobj, _, err := sw.backendSerializer.Decode(content, nil, out)
 			if err != nil {
