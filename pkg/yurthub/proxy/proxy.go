@@ -21,10 +21,12 @@ import (
 	"net/http"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/endpoints/filters"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/server"
+	"k8s.io/klog/v2"
 
 	"github.com/openyurtio/openyurt/cmd/yurthub/app/config"
 	"github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
@@ -159,8 +161,10 @@ func (p *yurtReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	// no handler is healthy
-	err := fmt.Errorf("no handler is healthy")
-	hubutil.Err(err, rw, req)
+	err := fmt.Errorf("cannot handle request %s, no handler is healthy", hubutil.ReqString(req))
+	klog.Error(err)
+	// TODO: set the retry period outward
+	hubutil.Err(errors.NewTimeoutError(err.Error(), 60), rw, req)
 }
 
 func (p *yurtReverseProxy) handleKubeletLease(rw http.ResponseWriter, req *http.Request) {

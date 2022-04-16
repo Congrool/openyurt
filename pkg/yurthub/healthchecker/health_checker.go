@@ -89,7 +89,11 @@ func NewHealthChecker(cfg *config.YurtHubConfiguration, tp transport.Interface, 
 		stopCh:                 stopCh,
 	}
 
-	for _, remoteServer := range cfg.RemoteServers {
+	allServers := cfg.RemoteServers
+	if cfg.EnablePoolCoordinator {
+		allServers = append(allServers, cfg.PoolSpiritServerAddr)
+	}
+	for _, remoteServer := range allServers {
 		c, err := newChecker(cfg, tp, remoteServer, hcm.setLastNodeLease, hcm.getLastNodeLease)
 		if err != nil {
 			return nil, err

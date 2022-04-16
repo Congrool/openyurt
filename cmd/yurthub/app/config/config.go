@@ -86,6 +86,7 @@ type YurtHubConfiguration struct {
 	EnableProfiling                   bool
 	EnableDummyIf                     bool
 	EnableIptables                    bool
+	EnablePoolCoordinator             bool
 	HubAgentDummyIfName               string
 	StorageWrapper                    cachemanager.StorageWrapper
 	StorageKeyFunc                    storage.KeyFunc
@@ -192,6 +193,7 @@ func Complete(ctx context.Context, options *options.YurtHubOptions) (*YurtHubCon
 		YurtHubProxyServerSecureDummyAddr: proxySecureServerDummyAddr,
 		PoolSpiritServerAddr:              poolcoordinatorServerAddr,
 		PoolSpiritEtcdAddr:                poolCoordinatorEtcdAddr,
+		EnablePoolCoordinator:             options.EnablePoolCoordinator,
 		GCFrequency:                       options.GCFrequency,
 		CertMgrMode:                       options.CertMgrMode,
 		KubeletRootCAFilePath:             options.KubeletRootCAFilePath,
