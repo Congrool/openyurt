@@ -295,3 +295,13 @@ func WithRequestTimeout(handler http.Handler) http.Handler {
 		handler.ServeHTTP(w, req)
 	})
 }
+
+func CopyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		if k == "Content-Type" || k == "Content-Length" {
+			for _, v := range vv {
+				dst.Add(k, v)
+			}
+		}
+	}
+}

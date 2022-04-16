@@ -49,17 +49,19 @@ type StorageWrapper interface {
 
 type storageWrapper struct {
 	sync.RWMutex
-	store             storage.Store
-	backendSerializer runtime.Serializer
-	cache             map[string]runtime.Object
+	store            storage.Store
+	universalDecoder runtime.Decoder
+	jsonEncoder      runtime.Encoder
+	cache            map[string]runtime.Object
 }
 
 // NewStorageWrapper create a StorageWrapper object
 func NewStorageWrapper(storage storage.Store) StorageWrapper {
 	return &storageWrapper{
-		store:             storage,
-		backendSerializer: json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
-		cache:             make(map[string]runtime.Object),
+		store:            storage,
+		universalDecoder: scheme.Codecs.UniversalDeserializer(),
+		jsonEncoder:      json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
+		cache:            make(map[string]runtime.Object),
 	}
 }
 
@@ -70,7 +72,7 @@ func NewStorageWrapper(storage storage.Store) StorageWrapper {
 func (sw *storageWrapper) Create(key string, obj runtime.Object) error {
 	var buf bytes.Buffer
 	if obj != nil {
-		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+		if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in create for %s, %v", key, err)
 			return err
 		}
@@ -79,6 +81,8 @@ func (sw *storageWrapper) Create(key string, obj runtime.Object) error {
 	if err := sw.store.Create(key, buf.Bytes()); err != nil {
 		return err
 	}
+
+	klog.V(4).Infof("successfully create obj, key: %s, content: %s, raw: %v", key, buf.String(), buf.Bytes())
 
 	if obj != nil && isCacheKey(key) {
 		sw.Lock()
@@ -125,6 +129,7 @@ func (sw *storageWrapper) Get(key string) (runtime.Object, error) {
 	//get the gvk from json data
 	gvk, err := json.DefaultMetaFactory.Interpret(b)
 	if err != nil {
+		klog.Errorf("failed to get gvk from obj, key: %s, content: %s, err: %v", key, string(b), err)
 		return nil, err
 	}
 	var UnstructuredObj runtime.Object
@@ -133,7 +138,7 @@ func (sw *storageWrapper) Get(key string) (runtime.Object, error) {
 	} else {
 		UnstructuredObj = new(unstructured.Unstructured)
 	}
-	obj, gvk, err := sw.backendSerializer.Decode(b, nil, UnstructuredObj)
+	obj, gvk, err := sw.universalDecoder.Decode(b, nil, UnstructuredObj)
 	if err != nil {
 		klog.Errorf("could not decode %v for %s, %v", gvk, key, err)
 		return nil, err
@@ -186,7 +191,7 @@ func (sw *storageWrapper) List(key string) ([]runtime.Object, error) {
 			UnstructuredObj = new(unstructured.Unstructured)
 		}
 
-		obj, gvk, err := sw.backendSerializer.Decode(bb[i], nil, UnstructuredObj)
+		obj, gvk, err := sw.universalDecoder.Decode(bb[i], nil, UnstructuredObj)
 		if err != nil {
 			klog.Errorf("could not decode %v for %s, %v", gvk, key, err)
 			continue
@@ -200,7 +205,7 @@ func (sw *storageWrapper) List(key string) ([]runtime.Object, error) {
 // Update update runtime object in backend storage
 func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, force bool) (runtime.Object, error) {
 	var buf bytes.Buffer
-	if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+	if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 		klog.Errorf("failed to encode object in update for %s, %v", key, err)
 		return nil, err
 	}
@@ -213,7 +218,7 @@ func (sw *storageWrapper) Update(key string, obj runtime.Object, rv uint64, forc
 			if !scheme.Scheme.Recognizes(gvk) {
 				out = new(unstructured.Unstructured)
 			}
-			curobj, _, err := sw.backendSerializer.Decode(content, nil, out)
+			curobj, _, err := sw.universalDecoder.Decode(content, nil, out)
 			if err != nil {
 				klog.Errorf("failed to decode content for %s, %v", key, err)
 				return nil, err
@@ -243,7 +248,7 @@ func (sw *storageWrapper) UpdateList(rootKey string, objs map[string]runtime.Obj
 	contents := make(map[string][]byte, len(objs))
 	rvs := make(map[string]int64, len(objs))
 	for key, obj := range objs {
-		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+		if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in update for %s, %v", key, err)
 			return err
 		}

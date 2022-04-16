@@ -34,6 +34,7 @@ import (
 
 	manager "github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
 	hubmeta "github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/meta"
+	proxyutil "github.com/openyurtio/openyurt/pkg/yurthub/proxy/util"
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
@@ -141,7 +142,7 @@ func (lp *LocalProxy) localPost(w http.ResponseWriter, req *http.Request) error 
 		req.Body.Close()
 	}
 
-	copyHeader(w.Header(), req.Header)
+	proxyutil.CopyHeader(w.Header(), req.Header)
 	w.WriteHeader(http.StatusCreated)
 
 	nw, err := w.Write(buf.Bytes())
@@ -222,14 +223,4 @@ func (lp *LocalProxy) localReqCache(w http.ResponseWriter, req *http.Request) er
 	}
 
 	return util.WriteObject(http.StatusOK, obj, w, req)
-}
-
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		if k == "Content-Type" || k == "Content-Length" {
-			for _, v := range vv {
-				dst.Add(k, v)
-			}
-		}
-	}
 }
