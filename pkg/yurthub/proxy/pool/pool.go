@@ -2,11 +2,13 @@ package pool
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,10 +23,15 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
+const (
+	interval = 2 * time.Second
+)
+
 // LocalProxy is responsible for handling requests when remote servers are unhealthy
 type PoolCoordinatorProxy struct {
 	poolCoordinatorProxy *proxyutil.RemoteProxy
 	cacheMgr             cachemanager.CacheManager
+	isCloudHealthy       func() bool
 }
 
 func NewPoolCoordinatorProxy(
@@ -32,6 +39,7 @@ func NewPoolCoordinatorProxy(
 	cacheMgr cachemanager.CacheManager,
 	transportMgr transport.Interface,
 	healthChecker healthchecker.HealthChecker,
+	isCloudHealthy func() bool,
 	certManager interfaces.YurtCertificateManager,
 	stopCh <-chan struct{}) (*PoolCoordinatorProxy, error) {
 	if poorCoordinatorAddr == nil {
@@ -48,6 +56,7 @@ func NewPoolCoordinatorProxy(
 	return &PoolCoordinatorProxy{
 		poolCoordinatorProxy: proxy,
 		cacheMgr:             cacheMgr,
+		isCloudHealthy:       isCloudHealthy,
 	}, nil
 }
 
@@ -59,20 +68,25 @@ func (pp *PoolCoordinatorProxy) ServeHTTP(rw http.ResponseWriter, req *http.Requ
 	ctx := req.Context()
 	if reqInfo, ok := apirequest.RequestInfoFrom(ctx); ok && reqInfo != nil && reqInfo.IsResourceRequest {
 		switch reqInfo.Verb {
+		// write request
 		case "create":
 			err = pp.poolPost(rw, req)
 		case "patch", "update":
 			err = pp.poolQuery(rw, req)
 		case "delete", "deletecollection":
-			err = notHandle("delete", rw, req)
+			klog.Errorf("pool coordinator proxy cannot handle request %s, verb: %s is forbidden", util.ReqString(req), reqInfo.Verb)
+			err = notHandle(reqInfo.Verb, rw, req)
+		// read-only request
 		case "list", "get":
 			pp.poolCoordinatorProxy.ServeHTTP(rw, req)
+		case "watch":
+			pp.poolWatch(rw, req)
 		default:
 			err = fmt.Errorf("unsupported verb for pool coordinator proxy: %s", reqInfo.Verb)
 		}
 		if err != nil {
 			klog.Errorf("could not proxy to pool-coordinator for %s, %v", util.ReqString(req), err)
-			util.Err(err, rw, req)
+			util.Err(errors.NewBadRequest(err.Error()), rw, req)
 		}
 	} else {
 		klog.Errorf("pool-coordinator does not support request(%s) when cluster is unhealthy", util.ReqString(req))
@@ -127,16 +141,46 @@ func (pp *PoolCoordinatorProxy) poolPost(rw http.ResponseWriter, req *http.Reque
 	return nil
 }
 
-// localReqCache handles Get/List/Update requests when remote servers are unhealthy
 func (pp *PoolCoordinatorProxy) poolQuery(rw http.ResponseWriter, req *http.Request) error {
 	if !pp.cacheMgr.CanCacheFor(req) {
 		klog.Errorf("can not cache for %s", util.ReqString(req))
 		return errors.NewBadRequest(fmt.Sprintf("can not cache for %s", util.ReqString(req)))
 	}
 
+	// TODO: Do this work?
 	req.Method = "GET"
 	pp.poolCoordinatorProxy.ServeHTTP(rw, req)
 	return nil
+}
+
+func (pp *PoolCoordinatorProxy) poolWatch(rw http.ResponseWriter, req *http.Request) {
+	clientReqCtx := req.Context()
+	poolServeCtx, poolServeCancel := context.WithCancel(clientReqCtx)
+
+	// check the cloud healthy perdically
+	// Once the cloud is healthy, stop watch request to pool coordinator
+	go func() {
+		intervalTicker := time.NewTicker(interval)
+		defer intervalTicker.Stop()
+		for {
+			select {
+			case <-intervalTicker.C:
+				if pp.isCloudHealthy() {
+					klog.V(4).Infof("notified the cloud is healthy, try to cancel watch request %s to pool coordinator",
+						util.ReqString(req))
+					poolServeCancel()
+					return
+				}
+			case <-clientReqCtx.Done():
+				klog.V(4).Infof("client canceled the watch request %s", util.ReqString(req))
+				return
+			}
+		}
+	}()
+
+	newReq := req.Clone(poolServeCtx)
+	pp.poolCoordinatorProxy.ServeHTTP(rw, newReq)
+	klog.V(4).Infof("exit watch request %s", util.ReqString(req))
 }
 
 func notHandle(verb string, w http.ResponseWriter, req *http.Request) error {

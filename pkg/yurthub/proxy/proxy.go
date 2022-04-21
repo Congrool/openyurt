@@ -99,6 +99,7 @@ func NewYurtReverseProxyHandler(
 			cacheMgr,
 			transportMgr,
 			healthChecker,
+			lb.IsHealthy,
 			certManager,
 			stopCh)
 		if err != nil {
@@ -173,7 +174,6 @@ func (p *yurtReverseProxy) handleKubeletLease(rw http.ResponseWriter, req *http.
 	// request should be proxyed
 	p.checker.UpdateLastKubeletLeaseReqTime(time.Now())
 	if p.poolCoordinatorProxy != nil {
-		// TODO: pool-coordinator cannot handle the request currently.
 		p.poolCoordinatorProxy.ServeHTTP(rw, req)
 	} else if p.localProxy != nil {
 		p.localProxy.ServeHTTP(rw, req)
