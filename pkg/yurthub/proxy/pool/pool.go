@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -66,7 +67,13 @@ func NewPoolCoordinatorProxy(
 func (pp *PoolCoordinatorProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var err error
 	ctx := req.Context()
-	if reqInfo, ok := apirequest.RequestInfoFrom(ctx); ok && reqInfo != nil && reqInfo.IsResourceRequest {
+	reqInfo, ok := apirequest.RequestInfoFrom(ctx)
+	if !ok || reqInfo == nil {
+		klog.Errorf("pool-coordinator proxy cannot handle request(%s), cannot get requestInfo", util.ReqString(req), reqInfo)
+		util.Err(errors.NewBadRequest(fmt.Sprintf("pool-coordinator proxy cannot handle request(%s), cannot get requestInfo", util.ReqString(req))), rw, req)
+		return
+	}
+	if reqInfo.IsResourceRequest {
 		switch reqInfo.Verb {
 		// write request
 		case "create":
@@ -88,8 +95,9 @@ func (pp *PoolCoordinatorProxy) ServeHTTP(rw http.ResponseWriter, req *http.Requ
 			klog.Errorf("could not proxy to pool-coordinator for %s, %v", util.ReqString(req), err)
 			util.Err(errors.NewBadRequest(err.Error()), rw, req)
 		}
+	} else if isClusterInfoRequest(reqInfo) {
+		pp.poolCoordinatorProxy.ServeHTTP(rw, req)
 	} else {
-
 		klog.Errorf("pool-coordinator does not support request(%s) when cluster is unhealthy, requestInfo: %v", util.ReqString(req), reqInfo)
 		util.Err(errors.NewBadRequest(fmt.Sprintf("pool-coordinator does not support request(%s) when cluster is unhealthy", util.ReqString(req))), rw, req)
 	}
@@ -156,6 +164,10 @@ func (pp *PoolCoordinatorProxy) poolQuery(rw http.ResponseWriter, req *http.Requ
 
 func (pp *PoolCoordinatorProxy) poolWatch(rw http.ResponseWriter, req *http.Request) {
 	clientReqCtx := req.Context()
+	comp, _ := util.ClientComponentFrom(clientReqCtx)
+	if comp == "" {
+		comp = "unknown"
+	}
 	poolServeCtx, poolServeCancel := context.WithCancel(clientReqCtx)
 
 	// check the cloud healthy perdically
@@ -167,13 +179,13 @@ func (pp *PoolCoordinatorProxy) poolWatch(rw http.ResponseWriter, req *http.Requ
 			select {
 			case <-intervalTicker.C:
 				if pp.isCloudHealthy() {
-					klog.V(4).Infof("notified the cloud is healthy, try to cancel watch request %s to pool coordinator",
-						util.ReqString(req))
+					klog.V(4).Infof("notified the cloud is healthy, try to cancel watch request from %s to pool coordinator, %s",
+						comp, util.ReqString(req))
 					poolServeCancel()
 					return
 				}
 			case <-clientReqCtx.Done():
-				klog.V(4).Infof("client canceled the watch request %s", util.ReqString(req))
+				klog.V(4).Infof("client canceled the watch request from %s: %s", comp, util.ReqString(req))
 				return
 			}
 		}
@@ -181,7 +193,7 @@ func (pp *PoolCoordinatorProxy) poolWatch(rw http.ResponseWriter, req *http.Requ
 
 	newReq := req.Clone(poolServeCtx)
 	pp.poolCoordinatorProxy.ServeHTTP(rw, newReq)
-	klog.V(4).Infof("exit watch request %s", util.ReqString(req))
+	klog.V(4).Infof("exit watch request from %s: %s", comp, util.ReqString(req))
 }
 
 func notHandle(verb string, w http.ResponseWriter, req *http.Request) error {
@@ -201,4 +213,17 @@ func notHandle(verb string, w http.ResponseWriter, req *http.Request) error {
 
 	util.WriteObject(http.StatusForbidden, s, w, req)
 	return nil
+}
+
+func isClusterInfoRequest(reqInfo *apirequest.RequestInfo) bool {
+	if reqInfo == nil {
+		return false
+	}
+	if !reqInfo.IsResourceRequest && strings.HasPrefix(reqInfo.Path, "/apis") {
+		return true
+	}
+	if !reqInfo.IsResourceRequest && strings.HasPrefix(reqInfo.Path, "/api") {
+		return true
+	}
+	return false
 }
