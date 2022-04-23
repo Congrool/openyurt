@@ -89,7 +89,8 @@ func (pp *PoolCoordinatorProxy) ServeHTTP(rw http.ResponseWriter, req *http.Requ
 			util.Err(errors.NewBadRequest(err.Error()), rw, req)
 		}
 	} else {
-		klog.Errorf("pool-coordinator does not support request(%s) when cluster is unhealthy", util.ReqString(req))
+
+		klog.Errorf("pool-coordinator does not support request(%s) when cluster is unhealthy, requestInfo: %v", util.ReqString(req), reqInfo)
 		util.Err(errors.NewBadRequest(fmt.Sprintf("pool-coordinator does not support request(%s) when cluster is unhealthy", util.ReqString(req))), rw, req)
 	}
 }
