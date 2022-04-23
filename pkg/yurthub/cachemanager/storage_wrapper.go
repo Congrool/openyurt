@@ -127,17 +127,7 @@ func (sw *storageWrapper) Get(key string) (runtime.Object, error) {
 		return nil, nil
 	}
 	//get the gvk from json data
-	gvk, err := json.DefaultMetaFactory.Interpret(b)
-	if err != nil {
-		klog.Errorf("failed to get gvk from obj, key: %s, content: %s, err: %v", key, string(b), err)
-		return nil, err
-	}
-	var UnstructuredObj runtime.Object
-	if scheme.Scheme.Recognizes(*gvk) {
-		UnstructuredObj = nil
-	} else {
-		UnstructuredObj = new(unstructured.Unstructured)
-	}
+	var UnstructuredObj runtime.Object = new(unstructured.Unstructured)
 	obj, gvk, err := sw.universalDecoder.Decode(b, nil, UnstructuredObj)
 	if err != nil {
 		klog.Errorf("could not decode %v for %s, %v", gvk, key, err)
@@ -175,23 +165,10 @@ func (sw *storageWrapper) List(key string) ([]runtime.Object, error) {
 		}
 		return objects, nil
 	}
-	//get the gvk from json data
-	gvk, err := json.DefaultMetaFactory.Interpret(bb[0])
-	if err != nil {
-		return nil, err
-	}
-	var UnstructuredObj runtime.Object
-	var recognized bool
-	if scheme.Scheme.Recognizes(*gvk) {
-		recognized = true
-	}
 
 	for i := range bb {
-		if !recognized {
-			UnstructuredObj = new(unstructured.Unstructured)
-		}
-
-		obj, gvk, err := sw.universalDecoder.Decode(bb[i], nil, UnstructuredObj)
+		unstructuredObj := new(unstructured.Unstructured)
+		obj, gvk, err := sw.universalDecoder.Decode(bb[i], nil, unstructuredObj)
 		if err != nil {
 			klog.Errorf("could not decode %v for %s, %v", gvk, key, err)
 			continue
