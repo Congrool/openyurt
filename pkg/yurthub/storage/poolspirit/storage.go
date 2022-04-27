@@ -165,7 +165,7 @@ func (s *Storage) Delete(key string) error {
 }
 
 func (s *Storage) Get(key string) ([]byte, error) {
-	klog.V(2).Infof("try to get key %s in pool-cache", key)
+	klog.V(4).Infof("try to get key %s in pool-cache", key)
 	if key == "" {
 		return nil, storage.ErrKeyIsEmpty
 	}
