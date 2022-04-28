@@ -124,7 +124,7 @@ func (ds *diskStorage) create(key string, contents []byte) error {
 		}
 	} else {
 		// dir for key is already exist
-		if _, err := os.Stat(keyPath); err == nil || err != os.ErrNotExist {
+		if _, err := os.Stat(keyPath); err == nil || !os.IsNotExist(err) {
 			return storage.ErrKeyExists
 		}
 	}
