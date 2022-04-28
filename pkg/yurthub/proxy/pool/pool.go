@@ -112,6 +112,13 @@ func (pp *PoolCoordinatorProxy) poolPost(rw http.ResponseWriter, req *http.Reque
 
 	ctx := req.Context()
 	info, _ := apirequest.RequestInfoFrom(ctx)
+	klog.V(4).Infof("pool handle post, req=%s, reqInfo=%s", util.ReqString(req), util.ReqInfoString(info))
+	if info.IsResourceRequest && info.Resource == "subjectaccessreviews" {
+		// kubelet needs to create subjectaccessreviews for auth
+		pp.poolCoordinatorProxy.ServeHTTP(rw, req)
+		return nil
+	}
+
 	reqContentType, _ := util.ReqContentTypeFrom(ctx)
 	if info.Resource == "events" && len(reqContentType) != 0 {
 		ctx = util.WithRespContentType(ctx, reqContentType)
