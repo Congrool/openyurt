@@ -113,7 +113,7 @@ func (pp *PoolCoordinatorProxy) poolPost(rw http.ResponseWriter, req *http.Reque
 	ctx := req.Context()
 	info, _ := apirequest.RequestInfoFrom(ctx)
 	klog.V(4).Infof("pool handle post, req=%s, reqInfo=%s", util.ReqString(req), util.ReqInfoString(info))
-	if info.IsResourceRequest && info.Resource == "subjectaccessreviews" {
+	if info.IsResourceRequest && isForAuthDecision(info) {
 		// kubelet needs to create subjectaccessreviews for auth
 		pp.poolCoordinatorProxy.ServeHTTP(rw, req)
 		return nil
@@ -164,6 +164,7 @@ func (pp *PoolCoordinatorProxy) poolQuery(rw http.ResponseWriter, req *http.Requ
 	}
 
 	// TODO: Do this work?
+	// Avoid to fetch data from etcd directly, through api-server instead.
 	req.Method = "GET"
 	pp.poolCoordinatorProxy.ServeHTTP(rw, req)
 	return nil
@@ -220,6 +221,15 @@ func notHandle(verb string, w http.ResponseWriter, req *http.Request) error {
 
 	util.WriteObject(http.StatusForbidden, s, w, req)
 	return nil
+}
+
+func isForAuthDecision(info *apirequest.RequestInfo) bool {
+	if info == nil {
+		return false
+	}
+	// subjectaccessreviews: when kube-apiserver sends logs request to kubelet
+	// selfsubjectaccessreviews: when using cmd kubectl auth can-i
+	return info.Resource == "subjectaccessreviews" || info.Resource == "selfsubjectaccessreviews"
 }
 
 func isClusterInfoRequest(reqInfo *apirequest.RequestInfo) bool {
