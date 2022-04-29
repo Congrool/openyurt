@@ -80,6 +80,7 @@ func (s *Storage) Create(key string, content []byte) error {
 	}
 
 	if !txnResp.Succeeded {
+		klog.V(4).Infof("%s has already existed in pool-cache, do not create it", key)
 		return storage.ErrKeyExists
 	}
 	klog.V(4).Infof("%s has been created in pool-cache", key)
@@ -126,9 +127,8 @@ func (s *Storage) Update(key string, content []byte, rv uint64, force bool) ([]b
 		if force {
 			klog.V(4).Infof("data in etcd has higher rv, update %s by force", key)
 			_, err := s.client.Put(s.ctx, key, string(content))
-			if err == nil {
-				klog.V(4).Infof("failed to update %s, %v", key, err)
-				return nil, err
+			if err != nil {
+				return nil, fmt.Errorf("failed to update %s, %v", key, err)
 			}
 			return nil, nil
 		}

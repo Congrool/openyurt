@@ -571,6 +571,7 @@ func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 		return false
 	}
 
+	klog.V(4).Infof("CanCacheFor for requestInfo: %s, Subresource: %s,", util.ReqInfoString(info), info.Subresource)
 	if !info.IsResourceRequest {
 		return false
 	}
