@@ -37,6 +37,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/network"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy"
 	"github.com/openyurtio/openyurt/pkg/yurthub/server"
+	"github.com/openyurtio/openyurt/pkg/yurthub/syncer"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
@@ -172,6 +173,11 @@ func Run(cfg *config.YurtHubConfiguration, stopCh <-chan struct{}) error {
 		trace++
 		klog.Infof("%d. new %s server and begin to serve, dummy proxy server: %s, secure dummy proxy server: %s", trace, projectinfo.GetHubName(), cfg.YurtHubProxyServerDummyAddr, cfg.YurtHubProxyServerSecureDummyAddr)
 	}
+
+	klog.Infof("%d. start syncer", trace)
+	syncer := syncer.NewSyncer(cfg.SharedFactory)
+	syncer.Start()
+	trace++
 
 	// start shared informers before start hub server
 	cfg.SharedFactory.Start(stopCh)
