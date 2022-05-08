@@ -551,10 +551,17 @@ func isCreate(ctx context.Context) bool {
 // 3. sub-resource request but is not status
 // 4. csr resource request
 func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
+	ifCanCache := false
+	var ifCanCacheP *bool = &ifCanCache
+	defer func(canCache *bool) {
+		klog.V(4).Infof("CanCacheFor for request: %s, ifCanCache: %v", util.ReqString(req), ifCanCache)
+	}(ifCanCacheP)
+
 	ctx := req.Context()
 	comp, ok := util.ClientComponentFrom(ctx)
 	if !ok || len(comp) == 0 {
-		return false
+		ifCanCache = false
+		return ifCanCache
 	}
 
 	canCache, ok := util.ReqCanCacheFrom(ctx)
@@ -564,30 +571,36 @@ func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 		cm.RLock()
 		if !cm.cacheAgents.HasAny("*", comp) {
 			cm.RUnlock()
-			return false
+			ifCanCache = false
+			klog.V(4).Infof("do not cache request: %s, for component %s is not cache agent", util.ReqString(req), comp)
+			return ifCanCache
 		}
 		cm.RUnlock()
 	}
 
 	info, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok || info == nil {
-		return false
+		ifCanCache = false
+		return ifCanCache
 	}
 
-	klog.V(4).Infof("CanCacheFor for requestInfo: %s, Subresource: %s,", util.ReqInfoString(info), info.Subresource)
 	if !info.IsResourceRequest {
-		return false
+		ifCanCache = false
+		return ifCanCache
 	}
 
 	if info.Verb == "delete" || info.Verb == "deletecollection" || info.Verb == "proxy" {
-		return false
+		ifCanCache = false
+		return ifCanCache
 	}
 
 	if info.Subresource != "" && info.Subresource != "status" {
-		return false
+		ifCanCache = false
+		return ifCanCache
 	}
 
-	return true
+	ifCanCache = true
+	return ifCanCache
 }
 
 // DeleteKindFor is used to delete the invalid Kind(which is not registered in the cloud)
