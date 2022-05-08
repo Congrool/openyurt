@@ -6,10 +6,24 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/validation/path"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	apirequest "k8s.io/apiserver/pkg/endpoints/request"
 
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 )
+
+// SpecialDefaultResourcePrefixes are prefixes compiled into Kubernetes.
+// refer to SpecialDefaultResourcePrefixes in k8s.io/pkg/kubeapiserver/default_storage_factory_builder.go
+var SpecialDefaultResourcePrefixes = map[schema.GroupResource]string{
+	{Group: "", Resource: "replicationcontrollers"}:        "controllers",
+	{Group: "", Resource: "endpoints"}:                     "services/endpoints",
+	{Group: "", Resource: "nodes"}:                         "minions",
+	{Group: "", Resource: "services"}:                      "services/specs",
+	{Group: "extensions", Resource: "ingresses"}:           "ingress",
+	{Group: "networking.k8s.io", Resource: "ingresses"}:    "ingress",
+	{Group: "extensions", Resource: "podsecuritypolicies"}: "podsecuritypolicy",
+	{Group: "policy", Resource: "podsecuritypolicies"}:     "podsecuritypolicy",
+}
 
 func (s *Storage) GetKeyFunc() storage.KeyFunc {
 	return s.KeyFunc
@@ -24,9 +38,6 @@ func (s *Storage) GetKeyFunc() storage.KeyFunc {
 // For list object:
 // /<prefix>/<Resource>/<Namespace>, or
 // /<prefix>/<Resource>
-//
-// TODO: minions for node resource
-// Note: for node resource, <Resource> will be minons.
 func (s *Storage) KeyFunc(ctx context.Context, namespace, name string) (string, error) {
 	info, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok || info == nil {
@@ -38,12 +49,13 @@ func (s *Storage) KeyFunc(ctx context.Context, namespace, name string) (string, 
 		return "", fmt.Errorf("failed to get resource")
 	}
 
-	if res == "nodes" {
-		// kubernetes stores minions instead of nodes in etcd
-		res = "minions"
+	resourcePrefix := res
+	groupResource := schema.GroupResource{Group: info.APIGroup, Resource: res}
+	if overridePrefix, ok := SpecialDefaultResourcePrefixes[groupResource]; ok {
+		resourcePrefix = overridePrefix
 	}
+	prefix := s.prefix + "/" + resourcePrefix
 
-	prefix := s.prefix + "/" + res
 	if info.Namespace == "" && namespace == "" {
 		if name == "" {
 			return NoNamespaceKeyFunc(prefix, info.Name)
