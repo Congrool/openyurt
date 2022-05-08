@@ -31,7 +31,7 @@ func (s *Storage) GetKeyFunc() storage.KeyFunc {
 
 // KeyFunc will try to use namespace and name in ctx. If namespace and name are
 // provided in parameters, it will use them instead.
-// For signal object:
+// For singal object:
 // /<Prefix>/<Resource>/<Namespace>/<Name>, or
 // /<Prefix>/<Resource>/<Name>, if the obj is non-namespaced,
 //

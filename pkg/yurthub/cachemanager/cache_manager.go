@@ -135,6 +135,8 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 		if err != nil {
 			return nil, err
 		}
+		comp, _ := util.ClientComponentFrom(ctx)
+		klog.V(4).Infof("component: %s try to get key: %s", comp, key)
 		return cm.storage.Get(key)
 	}
 
@@ -349,7 +351,8 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 
 	list, err := s.Decode(b)
 	if err != nil || list == nil {
-		klog.Errorf("failed to decode response in saveListObject %v", err)
+		klog.Errorf("failed to decode response %s in saveListObject, response content type: %s, requestInfo: %s, %v",
+			string(b), respContentType, util.ReqInfoString(info), err)
 		return err
 	}
 
@@ -431,7 +434,7 @@ func (cm *cacheManager) saveOneObject(ctx context.Context, info *apirequest.Requ
 
 	obj, err := s.Decode(b)
 	if err != nil {
-		klog.Errorf("failed to decode response in saveOneObject(respContentType:%s): %s, %v", respContentType, util.ReqInfoString(info), err)
+		klog.Errorf("failed to decode response %s in saveOneObject(respContentType:%s): %s, %v", string(b), respContentType, util.ReqInfoString(info), err)
 		return err
 	} else if obj == nil {
 		klog.Info("failed to decode nil object. skip cache")

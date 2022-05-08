@@ -62,7 +62,7 @@ func NewStorage(ctx context.Context, prefix, serverAddress, certFile, keyFile, c
 }
 
 func (s *Storage) Create(key string, content []byte) error {
-	klog.V(4).Infof("try to create key %s in pool-cache, content: %s", key, string(content))
+	klog.V(4).Infof("try to create key %s in pool-cache", key, string(content))
 	if err := validateKV(key, content); err != nil {
 		return err
 	}
