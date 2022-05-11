@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/endpoints/handlers"
@@ -361,13 +362,21 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		return nil
 	}
 
-	items, err := meta.ExtractList(list)
-	if err != nil {
-		klog.Errorf("unable to understand list result %#v (%v)", list, err)
-		return fmt.Errorf("unable to understand list result %#v (%v)", list, err)
+	items := []runtime.Object{}
+	if table, isTable := list.(*metav1.Table); isTable {
+		items, err = extractTable(table)
+		if err != nil {
+			klog.Errorf("unable to understand table result %#v of request %s, err: %v", table, util.ReqInfoString(info), err)
+			return fmt.Errorf("unable to understand table result %#v of request %s, err: %v", table, util.ReqInfoString(info), err)
+		}
+	} else {
+		items, err = meta.ExtractList(list)
+		if err != nil {
+			klog.Errorf("unable to understand list result %#v of request %s, err: %v", list, util.ReqInfoString(info), err)
+			return fmt.Errorf("unable to understand list result %#v of request %s, err: %v", list, util.ReqInfoString(info), err)
+		}
 	}
 	klog.V(5).Infof("list items for %s is: %d", util.ReqInfoString(info), len(items))
-
 	kind := strings.TrimSuffix(list.GetObjectKind().GroupVersionKind().Kind, "List")
 	apiVersion := schema.GroupVersion{
 		Group:   info.APIGroup,
@@ -606,4 +615,26 @@ func (cm *cacheManager) CanCacheFor(req *http.Request) bool {
 // DeleteKindFor is used to delete the invalid Kind(which is not registered in the cloud)
 func (cm *cacheManager) DeleteKindFor(gvr schema.GroupVersionResource) error {
 	return cm.restMapperManager.DeleteKindFor(gvr)
+}
+
+func extractTable(table *metav1.Table) ([]runtime.Object, error) {
+	items := []runtime.Object{}
+	errs := []error{}
+	for i := range table.Rows {
+		if table.Rows[i].Object.Object != nil {
+			items = append(items, table.Rows[i].Object.Object)
+		} else if table.Rows[i].Object.Raw != nil {
+			deserializer := scheme.Codecs.UniversalDeserializer()
+			item := &unstructured.Unstructured{}
+			_, _, err := deserializer.Decode(table.Rows[i].Object.Raw, nil, item)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to decode raw into unstructured obj at index %d", i))
+				continue
+			}
+			items = append(items, item)
+		} else {
+			errs = append(errs, fmt.Errorf("got nil obj at index %d", i))
+		}
+	}
+	return items, errors.NewAggregate(errs)
 }
