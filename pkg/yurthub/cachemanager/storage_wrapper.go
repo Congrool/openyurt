@@ -82,7 +82,7 @@ func (sw *storageWrapper) Create(key string, obj runtime.Object) error {
 		return err
 	}
 
-	klog.V(4).Infof("successfully create obj, key: %s, content: %s, raw: %v", key, buf.String(), buf.Bytes())
+	klog.V(4).Infof("successfully create obj, key: %s, content: %s", key, buf.String())
 
 	if obj != nil && isCacheKey(key) {
 		sw.Lock()
