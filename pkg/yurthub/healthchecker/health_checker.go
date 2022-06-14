@@ -31,6 +31,7 @@ import (
 	"github.com/openyurtio/openyurt/cmd/yurthub/app/config"
 	"github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
 	"github.com/openyurtio/openyurt/pkg/yurthub/metrics"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 )
 
@@ -157,8 +158,11 @@ func (hcm *healthCheckerManager) setLastNodeLease(lease *coordinationv1.Lease) e
 	accessor := meta.NewAccessor()
 	accessor.SetKind(lease, coordinationv1.SchemeGroupVersion.WithKind("Lease").Kind)
 	accessor.SetAPIVersion(lease, coordinationv1.SchemeGroupVersion.String())
-	cacheLeaseKey := fmt.Sprintf(cacheLeaseKeyFormat, lease.Name)
-	return hcm.sw.Update(cacheLeaseKey, lease)
+	cacheLeaseKey := disk.UnsafeDiskStorageKey(fmt.Sprintf(cacheLeaseKeyFormat, lease.Name))
+	if _, err := hcm.sw.Update(cacheLeaseKey, lease, 0, true); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (hcm *healthCheckerManager) getLastNodeLease() *coordinationv1.Lease {

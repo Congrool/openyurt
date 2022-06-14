@@ -103,7 +103,7 @@ func (fyc *fakeYurtHubCertManager) Start() {
 	}
 	fileName := fmt.Sprintf(hubConfigFileName, fyc.hubName)
 	yurthubConf := filepath.Join(fyc.rootDir, fileName)
-	if err := dStorage.Create(fileName, []byte(fyc.yurthubConifFile)); err != nil {
+	if err := dStorage.Create(disk.UnsafeDiskStorageKey(fileName), []byte(fyc.yurthubConifFile)); err != nil {
 		klog.Errorf("Unable to create the file %q: %v", yurthubConf, err)
 	}
 	return
