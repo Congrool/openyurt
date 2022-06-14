@@ -28,7 +28,8 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage/interfaces"
 )
 
 const (
@@ -46,7 +47,7 @@ var (
 // RESTMapperManager is responsible for managing different kind of RESTMapper
 type RESTMapperManager struct {
 	sync.RWMutex
-	storage storage.Store
+	storage interfaces.Store
 	// UnsafeDefaultRESTMapper is used to save the GVK and GVR mapping relationships of built-in resources
 	unsafeDefaultRESTMapper *meta.DefaultRESTMapper
 	// dynamicRESTMapper is used to save the GVK and GVR mapping relationships of Custom Resources
@@ -74,10 +75,10 @@ func NewDefaultRESTMapperFromScheme() *meta.DefaultRESTMapper {
 	return mapper
 }
 
-func NewRESTMapperManager(storage storage.Store) *RESTMapperManager {
+func NewRESTMapperManager(storage interfaces.Store) *RESTMapperManager {
 	var dm map[schema.GroupVersionResource]schema.GroupVersionKind
 	// Recover the mapping relationship between GVR and GVK from the hard disk
-	b, err := storage.Get(CacheDynamicRESTMapperKey)
+	b, err := storage.Get(disk.UnsafeDiskStorageKey(CacheDynamicRESTMapperKey))
 	if err == nil && len(b) != 0 {
 		dm = unmarshalDynamicRESTMapper(b)
 		klog.Infof("reset DynamicRESTMapper to %v", dm)
@@ -144,7 +145,8 @@ func (rm *RESTMapperManager) updateCachedDynamicRESTMapper() error {
 	if err != nil {
 		return err
 	}
-	return rm.storage.Update(CacheDynamicRESTMapperKey, d)
+	_, err = rm.storage.Update(disk.UnsafeDiskStorageKey(CacheDynamicRESTMapperKey), d, 0, true)
+	return err
 }
 
 // KindFor is used to find GVK based on GVR information.
@@ -193,7 +195,7 @@ func (rm *RESTMapperManager) UpdateKind(gvk schema.GroupVersionKind) error {
 // and delete the corresponding file in the disk (cache-crd-restmapper.conf), it should be used carefully.
 func (rm *RESTMapperManager) ResetRESTMapper() error {
 	rm.dynamicRESTMapper = make(map[schema.GroupVersionResource]schema.GroupVersionKind)
-	err := rm.storage.DeleteCollection(CacheDynamicRESTMapperKey)
+	err := rm.storage.DeleteCollection(disk.UnsafeDiskStorageKey(CacheDynamicRESTMapperKey))
 	if err != nil {
 		return err
 	}
