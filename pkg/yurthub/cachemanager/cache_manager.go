@@ -45,8 +45,7 @@ import (
 
 	hubmeta "github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/meta"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/serializer"
-	storageerrors "github.com/openyurtio/openyurt/pkg/yurthub/storage/errors"
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/interfaces"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
@@ -68,28 +67,28 @@ type cacheManager struct {
 	serializerManager     *serializer.SerializerManager
 	restMapperManager     *hubmeta.RESTMapperManager
 	cacheAgents           sets.String
-	listSelectorCollector map[string]string
+	listSelectorCollector map[storage.Key]string
 	sharedFactory         informers.SharedInformerFactory
 	inMemoryCache         map[string]runtime.Object
 }
 
 // NewCacheManager creates a new CacheManager
 func NewCacheManager(
-	storage StorageWrapper,
+	storagewrapper StorageWrapper,
 	serializerMgr *serializer.SerializerManager,
 	restMapperMgr *hubmeta.RESTMapperManager,
 	sharedFactory informers.SharedInformerFactory,
 ) CacheManager {
 	cm := &cacheManager{
-		storage:               storage,
+		storage:               storagewrapper,
 		serializerManager:     serializerMgr,
 		restMapperManager:     restMapperMgr,
 		cacheAgents:           sets.NewString(util.DefaultCacheAgents...),
-		listSelectorCollector: make(map[string]string),
+		listSelectorCollector: make(map[storage.Key]string),
 		sharedFactory:         sharedFactory,
 	}
 
-	NewCacheAgents(sharedFactory, storage)
+	NewCacheAgents(sharedFactory, storagewrapper)
 	return cm
 }
 
@@ -128,7 +127,7 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 	if !ok || info == nil || info.Resource == "" {
 		return nil, fmt.Errorf("failed to get request info")
 	}
-
+	comp, _ := util.ClientComponentFrom(ctx)
 	// query in-memory cache first
 	var isInMemoryCache = isInMemeoryCache(ctx)
 	var isInMemoryCacheMiss bool
@@ -150,11 +149,16 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 	if info.IsResourceRequest && info.Verb == "list" {
 		return cm.queryListObject(req)
 	} else if info.IsResourceRequest && (info.Verb == "get" || info.Verb == "patch" || info.Verb == "update") {
-		key, err := cm.storage.KeyFunc(ctx, "", "")
+		key, err := cm.storage.KeyFunc(storage.KeyBuildInfo{
+			Component: comp,
+			Namespace: info.Namespace,
+			Name:      info.Name,
+			Resources: info.Resource,
+		})
 		if err != nil {
 			return nil, err
 		}
-		comp, _ := util.ClientComponentFrom(ctx)
+
 		klog.V(4).Infof("component: %s try to get key: %s", comp, key)
 		obj, err := cm.storage.Get(key)
 		// When yurthub restart, the data stored in in-memory cache will loss,
@@ -180,7 +184,13 @@ func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
 func (cm *cacheManager) queryListObject(req *http.Request) (runtime.Object, error) {
 	ctx := req.Context()
 	info, _ := apirequest.RequestInfoFrom(ctx)
-	key, err := cm.storage.KeyFunc(ctx, "", "")
+	comp, _ := util.ClientComponentFrom(ctx)
+	key, err := cm.storage.KeyFunc(storage.KeyBuildInfo{
+		Component: comp,
+		Namespace: info.Namespace,
+		Name:      info.Name,
+		Resources: info.Resource,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +220,7 @@ func (cm *cacheManager) queryListObject(req *http.Request) (runtime.Object, erro
 			// in order to prevent the influence to business, return error here so pods
 			// will be kept on node.
 			klog.Warningf("get 0 pods for kubelet pod request, there should be at least one, hack the response with ErrStorageNotFound error")
-			return nil, storageerrors.ErrStorageNotFound
+			return nil, storage.ErrStorageNotFound
 		}
 	} else {
 		// If restMapper's kind and object's kind are inconsistent, use the object's kind
@@ -332,7 +342,12 @@ func (cm *cacheManager) saveWatchObject(ctx context.Context, info *apirequest.Re
 				continue
 			}
 
-			key, err := cm.storage.KeyFunc(ctx, ns, name)
+			key, err := cm.storage.KeyFunc(storage.KeyBuildInfo{
+				Component: comp,
+				Namespace: ns,
+				Name:      name,
+				Resources: info.Resource,
+			})
 			if err != nil {
 				klog.Errorf("failed to get cache path, %v", err)
 				continue
@@ -357,7 +372,7 @@ func (cm *cacheManager) saveWatchObject(ctx context.Context, info *apirequest.Re
 				klog.V(2).Infof("pod(%s) is %s", key, string(watchType))
 			}
 
-			if errors.Is(err, storageerrors.ErrStorageAccessConflict) {
+			if errors.Is(err, storage.ErrStorageAccessConflict) {
 				klog.V(2).Infof("skip to cache watch event because key(%s) is under processing", key)
 			} else if err != nil {
 				klog.Errorf("failed to process watch object %s, %v", key, err)
@@ -372,6 +387,7 @@ func (cm *cacheManager) saveWatchObject(ctx context.Context, info *apirequest.Re
 }
 
 func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.RequestInfo, b []byte) error {
+	comp, _ := util.ClientComponentFrom(ctx)
 	respContentType, _ := util.RespContentTypeFrom(ctx)
 	s := cm.serializerManager.CreateSerializer(respContentType, info.APIGroup, info.APIVersion, info.Resource)
 	if s == nil {
@@ -419,9 +435,14 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		if ns == "" {
 			ns = info.Namespace
 		}
-		key, _ := cm.storage.KeyFunc(ctx, ns, name)
+		key, _ := cm.storage.KeyFunc(storage.KeyBuildInfo{
+			Component: comp,
+			Namespace: ns,
+			Name:      name,
+			Resources: info.Resource,
+		})
 		err = cm.saveOneObjectWithValidation(key, items[0])
-		if errors.Is(err, storageerrors.ErrStorageAccessConflict) {
+		if errors.Is(err, storage.ErrStorageAccessConflict) {
 			klog.V(2).Infof("skip to cache list object because key(%s) is under processing", key)
 			return nil
 		}
@@ -429,11 +450,8 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 		return err
 	} else {
 		// list all objects or with fieldselector/labelselector
-		rootKey, err := cm.storage.KeyFunc(ctx, "", "")
-		if err != nil {
-			return fmt.Errorf("failed to get rootKey of requestInfo: %s, %v", util.ReqInfoString(info), err)
-		}
-		objs := make(map[interfaces.Key]runtime.Object)
+		objs := make(map[storage.Key]runtime.Object)
+		comp, _ := util.ClientComponentFrom(ctx)
 		selector, _ := util.ListSelectorFrom(ctx)
 		for i := range items {
 			accessor.SetKind(items[i], kind)
@@ -444,11 +462,16 @@ func (cm *cacheManager) saveListObject(ctx context.Context, info *apirequest.Req
 				ns = info.Namespace
 			}
 
-			key, _ := cm.storage.KeyFunc(ctx, ns, name)
+			key, _ := cm.storage.KeyFunc(storage.KeyBuildInfo{
+				Component: comp,
+				Namespace: ns,
+				Name:      name,
+				Resources: info.Resource,
+			})
 			objs[key] = items[i]
 		}
 		// if no objects in cloud cluster(objs is empty), it will clean the old files in the path of rootkey
-		return cm.storage.UpdateList(rootKey, objs, selector)
+		return cm.storage.ReplaceComponentList(comp, info.Resource, info.Namespace, selector, objs)
 	}
 }
 
@@ -487,7 +510,12 @@ func (cm *cacheManager) saveOneObject(ctx context.Context, info *apirequest.Requ
 		return nil
 	}
 
-	key, err := cm.storage.KeyFunc(ctx, info.Namespace, name)
+	key, err := cm.storage.KeyFunc(storage.KeyBuildInfo{
+		Component: comp,
+		Namespace: info.Namespace,
+		Name:      name,
+		Resources: info.Resource,
+	})
 	if err != nil {
 		klog.Errorf("failed to get cache key(%s:%s:%s:%s), %v", comp, info.Resource, info.Namespace, info.Name, err)
 		return err
@@ -500,7 +528,7 @@ func (cm *cacheManager) saveOneObject(ctx context.Context, info *apirequest.Requ
 	}
 
 	if err := cm.saveOneObjectWithValidation(key, obj); err != nil {
-		if !errors.Is(err, storageerrors.ErrStorageAccessConflict) {
+		if !errors.Is(err, storage.ErrStorageAccessConflict) {
 			return err
 		}
 		klog.V(2).Infof("skip to cache object because key(%s) is under processing", key)
@@ -522,7 +550,7 @@ func (cm *cacheManager) saveOneObject(ctx context.Context, info *apirequest.Requ
 	return nil
 }
 
-func (cm *cacheManager) saveOneObjectWithValidation(key interfaces.Key, obj runtime.Object) error {
+func (cm *cacheManager) saveOneObjectWithValidation(key storage.Key, obj runtime.Object) error {
 	accessor := meta.NewAccessor()
 	if isNotAssignedPod(obj) {
 		ns, _ := accessor.Namespace(obj)
@@ -537,9 +565,9 @@ func (cm *cacheManager) saveOneObjectWithValidation(key interfaces.Key, obj runt
 	}
 
 	newRvUint, _ := strconv.ParseUint(newRv, 10, 64)
-	_, err = cm.storage.Update(key, obj, newRvUint, false)
+	_, err = cm.storage.Update(key, obj, newRvUint)
 	if err != nil {
-		if err != storageerrors.ErrStorageAccessConflict {
+		if err != storage.ErrStorageAccessConflict {
 			return cm.storage.Create(key, obj)
 		}
 		return err

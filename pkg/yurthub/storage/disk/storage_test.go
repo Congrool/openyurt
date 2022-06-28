@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	storageerrors "github.com/openyurtio/openyurt/pkg/yurthub/storage/errors"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 )
 
 var (
@@ -48,7 +48,7 @@ func TestCreate(t *testing.T) {
 				data string
 			}{
 				"/kubelet/default/pods": {
-					err: storageerrors.ErrKeyHasNoContent,
+					err: storage.ErrKeyHasNoContent,
 				},
 			},
 		},
@@ -120,7 +120,7 @@ func TestCreate(t *testing.T) {
 			keysData: map[string]string{
 				"/kubelet/default/pods/foo": "",
 			},
-			createErr: storageerrors.ErrKeyHasNoContent,
+			createErr: storage.ErrKeyHasNoContent,
 		},
 	}
 	s, err := NewDiskStorage(testDir)
@@ -197,7 +197,7 @@ func TestDelete(t *testing.T) {
 				"kubelet/nodes/foo": {
 					beforeDelete: "node-test1",
 					deleteErr:    nil,
-					getErr:       storageerrors.ErrStorageNotFound,
+					getErr:       storage.ErrStorageNotFound,
 				},
 			},
 		},
@@ -225,7 +225,7 @@ func TestDelete(t *testing.T) {
 			}{
 				"kubelet/nodes/": {
 					deleteErr: nil,
-					getErr:    storageerrors.ErrKeyHasNoContent,
+					getErr:    storage.ErrKeyHasNoContent,
 				},
 			},
 		},
@@ -311,7 +311,7 @@ func TestGet(t *testing.T) {
 				data string
 			}{
 				"kubelet/nodes/foo": {
-					err: storageerrors.ErrStorageNotFound,
+					err: storage.ErrStorageNotFound,
 				},
 			},
 		},
@@ -324,7 +324,7 @@ func TestGet(t *testing.T) {
 				data string
 			}{
 				"kubelet/nodes": {
-					err: storageerrors.ErrKeyHasNoContent,
+					err: storage.ErrKeyHasNoContent,
 				},
 			},
 		},
@@ -506,7 +506,7 @@ func TestList(t *testing.T) {
 		"list for not exist file": {
 			listKey: "kubelet/pods/default/foo5",
 			result:  map[string]struct{}{},
-			listErr: storageerrors.ErrStorageNotFound,
+			listErr: storage.ErrStorageNotFound,
 		},
 	}
 	s, err := NewDiskStorage(testDir)
@@ -598,7 +598,7 @@ func TestUpdate(t *testing.T) {
 				"kubelet/pods/default/foo1": "test-pod1",
 				"kubelet/pods/default/foo2": "test-pod2",
 			},
-			updateErr: storageerrors.ErrKeyHasNoContent,
+			updateErr: storage.ErrKeyHasNoContent,
 		},
 	}
 	s, err := NewDiskStorage(testDir)

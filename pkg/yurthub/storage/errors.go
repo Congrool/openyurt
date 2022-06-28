@@ -1,4 +1,4 @@
-package errors
+package storage
 
 import "errors"
 
@@ -25,3 +25,9 @@ var ErrUpdateConflict = errors.New("update conflict for old resource version")
 
 // ErrUnrecognizedKey indicates that this key cannot be recognized by this store
 var ErrUnrecognizedKey = errors.New("unrecognized key")
+
+// ErrEmptyComponent indicates that the component is empty.
+var ErrEmptyComponent = errors.New("component is empty")
+
+// ErrEmptyResource indicates that the resource is empty.
+var ErrEmptyResource = errors.New("resource is empty")
