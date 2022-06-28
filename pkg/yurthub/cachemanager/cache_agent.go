@@ -26,7 +26,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
@@ -127,12 +126,12 @@ func (ca *CacheAgent) deleteAgentCache(deletedAgents sets.String) {
 	// TODO: cache agent currently depend on the disk storage
 	// it should have the capability of handling general store
 	if deletedAgents.Len() > 0 {
-		keys := deletedAgents.List()
-		for i := range keys {
-			if err := ca.store.DeleteCollection(disk.UnsafeDiskStorageKey(keys[i])); err != nil {
-				klog.Errorf("failed to cleanup cache for deleted agent(%s), %v", keys[i], err)
+		components := deletedAgents.List()
+		for i := range components {
+			if err := ca.store.DeleteComponentResources(components[i]); err != nil {
+				klog.Errorf("failed to cleanup cache for deleted agent(%s), %v", components[i], err)
 			} else {
-				klog.Infof("cleanup cache for agent(%s) successfully", keys[i])
+				klog.Infof("cleanup cache for agent(%s) successfully", components[i])
 			}
 		}
 	}

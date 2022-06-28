@@ -18,45 +18,41 @@ package cachemanager
 
 import (
 	"bytes"
-	"context"
 	"strconv"
 	"sync"
 
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
-
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/interfaces"
 )
 
 // StorageWrapper is wrapper for storage.Store interface
 // in order to handle serialize runtime object
 type StorageWrapper interface {
 	Name() string
-	Create(key interfaces.Key, obj runtime.Object) error
-	Delete(key interfaces.Key) error
-	Get(key interfaces.Key) (runtime.Object, error)
-	ListKeys(key interfaces.Key) ([]interfaces.Key, error)
-	List(key interfaces.Key) ([]runtime.Object, error)
-	Update(key interfaces.Key, obj runtime.Object, rv uint64, force bool) (runtime.Object, error)
-	UpdateList(rootKey interfaces.Key, objs map[interfaces.Key]runtime.Object, selector string) error
-	DeleteCollection(rootKey interfaces.Key) error
-	GetRaw(key interfaces.Key) ([]byte, error)
-	UpdateRaw(key interfaces.Key, contents []byte, rv uint64, force bool) ([]byte, error)
-	KeyFunc(reqCtx context.Context, namespace, name string) (interfaces.Key, error)
+	Create(key storage.Key, obj runtime.Object) error
+	Delete(key storage.Key) error
+	Get(key storage.Key) (runtime.Object, error)
+	List(key storage.Key) ([]runtime.Object, error)
+	Update(key storage.Key, obj runtime.Object, rv uint64) (runtime.Object, error)
+	KeyFunc(info storage.KeyBuildInfo) (storage.Key, error)
+	ListResourceKeysOfComponent(component string, resource string) ([]storage.Key, error)
+	ReplaceComponentList(component, resource, namespace, selector string, contents map[storage.Key]runtime.Object) error
+	DeleteComponentResources(component string) error
 }
 
 type storageWrapper struct {
 	sync.RWMutex
-	store             interfaces.Store
+	store             storage.Store
 	backendSerializer runtime.Serializer
 }
 
 // NewStorageWrapper create a StorageWrapper object
-func NewStorageWrapper(storage interfaces.Store) StorageWrapper {
+func NewStorageWrapper(storage storage.Store) StorageWrapper {
 	return &storageWrapper{
 		store:             storage,
 		backendSerializer: json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
@@ -67,15 +63,15 @@ func (sw *storageWrapper) Name() string {
 	return sw.store.Name()
 }
 
-func (sw *storageWrapper) KeyFunc(reqCtx context.Context, namespace, name string) (interfaces.Key, error) {
-	return sw.store.KeyFunc(reqCtx, namespace, name)
+func (sw *storageWrapper) KeyFunc(info storage.KeyBuildInfo) (storage.Key, error) {
+	return sw.store.KeyFunc(info)
 }
 
 // Create store runtime object into backend storage
 // if obj is nil, the storage used to represent the key
 // will be created. for example: for disk storage,
 // a directory that indicates the key will be created.
-func (sw *storageWrapper) Create(key interfaces.Key, obj runtime.Object) error {
+func (sw *storageWrapper) Create(key storage.Key, obj runtime.Object) error {
 	var buf bytes.Buffer
 	if obj != nil {
 		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
@@ -92,12 +88,12 @@ func (sw *storageWrapper) Create(key interfaces.Key, obj runtime.Object) error {
 }
 
 // Delete remove runtime object that by specified key from backend storage
-func (sw *storageWrapper) Delete(key interfaces.Key) error {
+func (sw *storageWrapper) Delete(key storage.Key) error {
 	return sw.store.Delete(key)
 }
 
 // Get get the runtime object that specified by key from backend storage
-func (sw *storageWrapper) Get(key interfaces.Key) (runtime.Object, error) {
+func (sw *storageWrapper) Get(key storage.Key) (runtime.Object, error) {
 	b, err := sw.GetRaw(key)
 	if err != nil {
 		return nil, err
@@ -125,12 +121,12 @@ func (sw *storageWrapper) Get(key interfaces.Key) (runtime.Object, error) {
 }
 
 // ListKeys list all keys with key as prefix
-func (sw *storageWrapper) ListKeys(key interfaces.Key) ([]interfaces.Key, error) {
-	return sw.store.ListKeys(key)
+func (sw *storageWrapper) ListResourceKeysOfComponent(component string, resource string) ([]storage.Key, error) {
+	return sw.store.ListResourceKeysOfComponent(component, resource)
 }
 
 // List get all of runtime objects that specified by key as prefix
-func (sw *storageWrapper) List(key interfaces.Key) ([]runtime.Object, error) {
+func (sw *storageWrapper) List(key storage.Key) ([]runtime.Object, error) {
 	bb, err := sw.store.List(key)
 	objects := make([]runtime.Object, 0, len(bb))
 	if err != nil {
@@ -165,24 +161,24 @@ func (sw *storageWrapper) List(key interfaces.Key) ([]runtime.Object, error) {
 }
 
 // Update update runtime object in backend storage
-func (sw *storageWrapper) Update(key interfaces.Key, obj runtime.Object, rv uint64, force bool) (runtime.Object, error) {
+func (sw *storageWrapper) Update(key storage.Key, obj runtime.Object, rv uint64) (runtime.Object, error) {
 	var buf bytes.Buffer
 	if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
 		klog.Errorf("failed to encode object in update for %s, %v", key, err)
 		return nil, err
 	}
 
-	if _, err := sw.UpdateRaw(key, buf.Bytes(), rv, force); err != nil {
+	if _, err := sw.store.Update(key, buf.Bytes(), rv); err != nil {
 		return nil, err
 	}
 
 	return obj, nil
 }
 
-func (sw *storageWrapper) UpdateList(rootKey interfaces.Key, objs map[interfaces.Key]runtime.Object, selector string) error {
+func (sw *storageWrapper) ReplaceComponentList(component, resource, namespace, selector string, objs map[storage.Key]runtime.Object) error {
 	var buf bytes.Buffer
-	contents := make(map[interfaces.Key][]byte, len(objs))
-	rvs := make(map[interfaces.Key]int64, len(objs))
+	contents := make(map[storage.Key][]byte, len(objs))
+	rvs := make(map[storage.Key]int64, len(objs))
 	for key, obj := range objs {
 		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in update for %s, %v", key, err)
@@ -204,20 +200,15 @@ func (sw *storageWrapper) UpdateList(rootKey interfaces.Key, objs map[interfaces
 		buf.Reset()
 	}
 
-	return sw.store.UpdateList(rootKey, contents, rvs, selector)
+	return sw.store.ReplaceComponentList(component, resource, namespace, selector, contents)
 }
 
 // DeleteCollection will delete all objects under rootKey
-func (sw *storageWrapper) DeleteCollection(rootKey interfaces.Key) error {
-	return sw.store.DeleteCollection(rootKey)
+func (sw *storageWrapper) DeleteComponentResources(component string) error {
+	return sw.store.DeleteComponentResources(component)
 }
 
 // GetRaw get byte data for specified key
-func (sw *storageWrapper) GetRaw(key interfaces.Key) ([]byte, error) {
+func (sw *storageWrapper) GetRaw(key storage.Key) ([]byte, error) {
 	return sw.store.Get(key)
-}
-
-// UpdateRaw update contents(byte date) for specified key
-func (sw *storageWrapper) UpdateRaw(key interfaces.Key, contents []byte, rv uint64, force bool) ([]byte, error) {
-	return sw.store.Update(key, contents, rv, force)
 }

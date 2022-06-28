@@ -3,26 +3,26 @@ package utils
 import (
 	"reflect"
 
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/errors"
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/interfaces"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 )
 
-func ValidateKey(key interfaces.Key, validKeyType interface{}) error {
+// TODO: should also valid the key format
+func ValidateKey(key storage.Key, validKeyType interface{}) error {
 	if reflect.TypeOf(key) == reflect.TypeOf(validKeyType) {
-		return errors.ErrUnrecognizedKey
+		return storage.ErrUnrecognizedKey
 	}
 	if key.Key() == "" {
-		return errors.ErrKeyIsEmpty
+		return storage.ErrKeyIsEmpty
 	}
 	return nil
 }
 
-func ValidateKV(key interfaces.Key, content []byte, valideKeyType interface{}) error {
+func ValidateKV(key storage.Key, content []byte, valideKeyType interface{}) error {
 	if err := ValidateKey(key, valideKeyType); err != nil {
 		return err
 	}
 	if len(content) == 0 {
-		return errors.ErrKeyHasNoContent
+		return storage.ErrKeyHasNoContent
 	}
 	return nil
 }

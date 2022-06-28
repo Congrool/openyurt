@@ -32,6 +32,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/filter"
 	filterutil "github.com/openyurtio/openyurt/pkg/yurthub/filter/util"
 	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/serializer"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage/disk"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util"
 	yurtinformers "github.com/openyurtio/yurt-app-manager-api/pkg/yurtappmanager/client/informers/externalversions"
@@ -122,7 +123,14 @@ func (ssf *serviceTopologyFilter) SetStorageWrapper(s cachemanager.StorageWrappe
 	}
 	klog.Infof("prepare local disk storage to sync node(%s) for edge working mode", ssf.nodeName)
 
-	nodeKey := disk.UnsafeDiskStorageKey(fmt.Sprintf("kubelet/nodes/%s", ssf.nodeName))
+	nodeKey, err := s.KeyFunc(storage.KeyBuildInfo{
+		Component: "kubelet",
+		Name:      ssf.nodeName,
+		Resources: "nodes",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get node key for %s, %v", ssf.nodeName, err)
+	}
 	ssf.nodeSynced = func() bool {
 		obj, err := s.Get(nodeKey)
 		if err != nil || obj == nil {
@@ -137,7 +145,15 @@ func (ssf *serviceTopologyFilter) SetStorageWrapper(s cachemanager.StorageWrappe
 	}
 
 	ssf.nodeGetter = func(name string) (*v1.Node, error) {
-		obj, err := s.Get(disk.UnsafeDiskStorageKey(fmt.Sprintf("kubelet/nodes/%s", name)))
+		key, err := s.KeyFunc(storage.KeyBuildInfo{
+			Component: "kubelet",
+			Name:      name,
+			Resources: "nodes",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("nodeGetter failed to get node key for %s, %v", name, err)
+		}
+		obj, err := s.Get(key)
 		if err != nil {
 			return nil, err
 		} else if obj == nil {

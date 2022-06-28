@@ -114,7 +114,7 @@ func Complete(options *options.YurtHubOptions) (*YurtHubConfiguration, error) {
 	}
 	storageWrapper := cachemanager.NewStorageWrapper(storageManager)
 	serializerManager := serializer.NewSerializerManager()
-	restMapperManager := meta.NewRESTMapperManager(storageManager)
+	restMapperManager := meta.NewRESTMapperManager(options.DiskCachePath)
 
 	hubServerAddr := net.JoinHostPort(options.YurtHubHost, options.YurtHubPort)
 	proxyServerAddr := net.JoinHostPort(options.YurtHubProxyHost, options.YurtHubProxyPort)

@@ -18,8 +18,6 @@ package disk
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,9 +31,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/errors"
-	"github.com/openyurtio/openyurt/pkg/yurthub/storage/interfaces"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage/utils"
+	"github.com/openyurtio/openyurt/pkg/yurthub/util/fs"
 )
 
 const (
@@ -44,16 +42,20 @@ const (
 	tmpPrefix    = "tmp_"
 )
 
+// TODO: lock should block, and also add comment about it
+// TODO: should optimize the efficiency of the lock mechanism
+// TODO: update comment for each function
 type diskStorage struct {
-	baseDir          string
-	keyPendingStatus map[string]struct{}
-	serializer       runtime.Serializer
 	sync.Mutex
+	baseDir               string
+	keyPendingStatus      map[string]struct{}
+	serializer            runtime.Serializer
 	listSelectorCollector map[string]string
+	fsOperator            *fs.FileSystemOperator
 }
 
 // NewDiskStorage creates a storage.Store for caching data into local disk
-func NewDiskStorage(dir string) (interfaces.Store, error) {
+func NewDiskStorage(dir string) (storage.Store, error) {
 	if dir == "" {
 		klog.Infof("disk cache path is empty, set it by default %s", CacheBaseDir)
 		dir = CacheBaseDir
@@ -70,335 +72,225 @@ func NewDiskStorage(dir string) (interfaces.Store, error) {
 		serializer:       json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
 	}
 
-	err := ds.Recover(storageKey(""))
+	err := ds.Recover()
 	if err != nil {
-		klog.Errorf("could not recover local storage, %v, and skip the error", err)
+		// we should ensure that there no tmp file last when local storage start to work.
+		// Otherwise, it means the baseDir cannot serve as local storage dir, because there're some subpath
+		// cannot manipulated by this local storage, which will have bad influence when the local storage is working.
+		// So, we'd better return error to avoid unknown problems.
+		return nil, fmt.Errorf("could not recover local storage, %v, and skip the error", err)
 	}
 	return ds, nil
 }
 
+// Name will return the name of this storage
 func (ds *diskStorage) Name() string {
 	return StorageName
 }
 
-// Create new a file with key and contents or create dir only
-// when contents are empty.
-func (ds *diskStorage) Create(key interfaces.Key, contents []byte) error {
+// Create will create a new file with content. key indicates the path of the file.
+func (ds *diskStorage) Create(key storage.Key, content []byte) error {
 	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
 		return err
 	}
 	if !ds.lockKey(key) {
-		return errors.ErrStorageAccessConflict
+		return storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
 
-	// no contents, create key dir only
-	if len(contents) == 0 {
-		keyPath := filepath.Join(ds.baseDir, key.Key())
-		if info, err := os.Stat(keyPath); err != nil {
-			if os.IsNotExist(err) {
-				if err = os.MkdirAll(keyPath, 0755); err != nil {
-					return err
-				}
-				return errors.ErrKeyHasNoContent
-			}
-		} else if info.IsDir() {
-			return errors.ErrKeyExists
-		} else {
-			return errors.ErrKeyHasNoContent
-		}
+	path := filepath.Join(ds.baseDir, key.Key())
+	err := ds.fsOperator.CreateFile(path, content)
+	if err == fs.ErrExists {
+		return storage.ErrKeyExists
 	}
-
-	return ds.create(key, contents)
-}
-
-// create will make up a file with key as file path and contents as file contents.
-func (ds *diskStorage) create(key interfaces.Key, contents []byte) error {
-	keyPath := filepath.Join(ds.baseDir, key.Key())
-	dir, _ := filepath.Split(keyPath)
-	if _, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			if err = os.MkdirAll(dir, 0755); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	} else {
-		// dir for key is already exist
-		if _, err := os.Stat(keyPath); err == nil || !os.IsNotExist(err) {
-			return errors.ErrKeyExists
-		}
-	}
-
-	// open file with synchronous I/O
-	f, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0600)
 	if err != nil {
-		return err
-	}
-	n, err := f.Write(contents)
-	if err == nil && n < len(contents) {
-		err = io.ErrShortWrite
-	}
-
-	if err1 := f.Close(); err == nil {
-		err = err1
-	}
-	return err
-}
-
-// Delete delete file that specified by key
-func (ds *diskStorage) Delete(key interfaces.Key) error {
-	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
-		return err
-	}
-
-	if !ds.lockKey(key) {
-		return errors.ErrStorageAccessConflict
-	}
-	defer ds.unLockKey(key)
-
-	errs := make([]error, 0)
-	if err := ds.delete(key); err != nil {
-		errs = append(errs, err)
-	}
-
-	tmpKey := getTmpKey(key)
-	if err := ds.delete(tmpKey); err != nil {
-		errs = append(errs, err)
-	}
-
-	if len(errs) != 0 {
-		return fmt.Errorf("%#+v", errs)
+		return fmt.Errorf("failed to create file %s, %v", path, err)
 	}
 	return nil
 }
 
-func (ds *diskStorage) delete(key interfaces.Key) error {
+// Delete will delete the file that specified by key.
+func (ds *diskStorage) Delete(key storage.Key) error {
 	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
 		return err
 	}
 
-	absKey := filepath.Join(ds.baseDir, key.Key())
-	info, err := os.Stat(absKey)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+	if !ds.lockKey(key) {
+		return storage.ErrStorageAccessConflict
 	}
+	defer ds.unLockKey(key)
 
-	if info.Mode().IsRegular() {
-		return os.Remove(absKey)
+	path := filepath.Join(ds.baseDir, key.Key())
+	if err := ds.fsOperator.DeleteFile(path); err != nil {
+		return fmt.Errorf("failed to delete file %s, %v", path, err)
 	}
 
 	return nil
 }
 
-// Get get contents from the file that specified by key
-func (ds *diskStorage) Get(key interfaces.Key) ([]byte, error) {
+// Get will get content from the regular file that specified by key.
+func (ds *diskStorage) Get(key storage.Key) ([]byte, error) {
 	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
-		return []byte{}, errors.ErrKeyIsEmpty
+		return []byte{}, storage.ErrKeyIsEmpty
 	}
 
 	if !ds.lockKey(key) {
-		return nil, errors.ErrStorageAccessConflict
+		return nil, storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
-	return ds.get(filepath.Join(ds.baseDir, key.Key()))
+
+	path := filepath.Join(ds.baseDir, key.Key())
+	buf, err := ds.fsOperator.Read(path)
+	switch err {
+	case nil:
+		return buf, nil
+	case fs.ErrNotExists:
+		return nil, storage.ErrStorageNotFound
+	case fs.ErrIsNotFile:
+		return nil, storage.ErrKeyHasNoContent
+	default:
+		return buf, fmt.Errorf("failed to read file at %s, %v", path, err)
+	}
 }
 
-// get returns contents from the file of path
-func (ds *diskStorage) get(path string) ([]byte, error) {
-	if path == "" {
-		return []byte{}, errors.ErrKeyIsEmpty
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []byte{}, errors.ErrStorageNotFound
-		}
-		return nil, fmt.Errorf("failed to get bytes from %s, %v", path, err)
-	} else if info.Mode().IsRegular() {
-		b, err := ioutil.ReadFile(path)
-		if err != nil {
-			return []byte{}, err
-		}
-
-		return b, nil
-	} else if info.IsDir() {
-		return []byte{}, errors.ErrKeyHasNoContent
-	}
-
-	return nil, fmt.Errorf("%s is exist, but not recognized, %v", path, info.Mode())
-}
-
-// ListKeys list all of keys for files
-func (ds *diskStorage) ListKeys(rootKey interfaces.Key) ([]interfaces.Key, error) {
-	if err := utils.ValidateKey(rootKey, emptyStorageKey); err != nil {
-		return nil, errors.ErrKeyIsEmpty
-	}
-
-	keys := make([]interfaces.Key, 0)
-	absPath := filepath.Join(ds.baseDir, rootKey.Key())
-	if info, err := os.Stat(absPath); err != nil {
-		if os.IsNotExist(err) {
-			return keys, errors.ErrStorageNotFound
-		}
-		return keys, err
-	} else if info.IsDir() {
-		err := filepath.Walk(absPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if info.Mode().IsRegular() {
-				if !isTmpFile(path) {
-					keys = append(keys, storageKey(strings.TrimPrefix(path, ds.baseDir)))
-				}
-			}
-
-			return nil
-		})
-
-		return keys, err
-	} else if info.Mode().IsRegular() {
-		keys = append(keys, rootKey)
-		return keys, nil
-	}
-
-	return keys, fmt.Errorf("failed to list keys because %s not recognized", rootKey)
-}
-
-// List get all of contents for local files
-func (ds *diskStorage) List(key interfaces.Key) ([][]byte, error) {
+// List will get contents of all files directly recursively under the root dir pointed by the rootKey.
+// If the root dir pointed by the rootKey does not exist, return ErrStorageNotFound.
+func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
-		return [][]byte{}, errors.ErrKeyIsEmpty
+		return [][]byte{}, storage.ErrKeyIsEmpty
 	}
 
 	if !ds.lockKey(key) {
-		return nil, errors.ErrStorageAccessConflict
+		return nil, storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
 
 	bb := make([][]byte, 0)
-	absKey := filepath.Join(ds.baseDir, key.Key())
-	info, err := os.Stat(absKey)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return bb, errors.ErrStorageNotFound
-		}
-		klog.Errorf("filed to list bytes for (%s), %v", key.Key(), err)
-		return nil, err
-	} else if info.Mode().IsRegular() {
-		b, err := ds.get(absKey)
-		if err != nil {
-			return nil, err
-		}
-
-		bb = append(bb, b)
-		return bb, nil
-	} else if info.Mode().IsDir() {
-		err := filepath.Walk(absKey, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if info.Mode().IsRegular() && !isTmpFile(path) {
-				b, err := ds.get(path)
-				if err != nil {
-					klog.Warningf("failed to get bytes for %s when listing bytes, %v", path, err)
-					return nil
-				}
-
-				bb = append(bb, b)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return nil, err
-		}
-
-		return bb, nil
+	absPath := filepath.Join(ds.baseDir, key.Key())
+	files, err := ds.fsOperator.List(absPath, fs.ListModeFiles, true)
+	if err == fs.ErrNotExists {
+		return nil, storage.ErrStorageNotFound
 	}
-
-	return nil, fmt.Errorf("%s is exist, but not recognized, %v", key.Key(), info.Mode())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all files under %s, %v", absPath, err)
+	}
+	for _, file := range files {
+		path := filepath.Join(absPath, file)
+		buf, err := ds.fsOperator.Read(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file at %s, %v", path, err)
+		}
+		bb = append(bb, buf)
+	}
+	return bb, nil
 }
 
-// Update will update local file that specified by key with contents
-func (ds *diskStorage) Update(key interfaces.Key, contents []byte, rv uint64, force bool) ([]byte, error) {
-	if err := utils.ValidateKV(key, contents, emptyStorageKey); err != nil {
+// Update will update the file pointed by the key. It will check the rv of
+// stored obj and update it only when the rv in argument is fresher than what is stored.
+// It will return the content that finally stored in the file pointed by key.
+// Update works in a backup way, which means it will first backup the original file, and then
+// write the content into it.
+func (ds *diskStorage) Update(key storage.Key, content []byte, rv uint64) ([]byte, error) {
+	if err := utils.ValidateKV(key, content, emptyStorageKey); err != nil {
 		return nil, err
 	}
 
 	if !ds.lockKey(key) {
-		return nil, errors.ErrStorageAccessConflict
+		return nil, storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
 
-	keyStr := key.Key()
-	curContent, err := ds.get(filepath.Join(ds.baseDir, keyStr))
+	absPath := filepath.Join(ds.baseDir, key.Key())
+	old, err := ds.fsOperator.Read(absPath)
+	if err == fs.ErrNotExists {
+		return nil, storage.ErrStorageNotFound
+	}
 	if err != nil {
-		return nil, err
-	}
-	klog.V(4).Infof("find key %s exist when updating it", keyStr)
-	if !force {
-		// check resource version
-		unstructuredObj := &unstructured.Unstructured{}
-		curObj, _, err := ds.serializer.Decode(curContent, nil, unstructuredObj)
-		if err != nil {
-			klog.Errorf("failed to decode obj at %s, %v", keyStr, err)
-			return nil, err
-		}
-		curRv, err := ObjectResourceVersion(curObj)
-		if err != nil {
-			klog.Errorf("failed to get rv of obj exists at %s, %v", keyStr, err)
-			return nil, err
-		}
-		if rv < curRv {
-			klog.V(4).Infof("find that obj with key %s has higher rv, do not update it", keyStr)
-			return nil, errors.ErrUpdateConflict
-		}
+		return nil, fmt.Errorf("failed to read file at %s, %v", absPath, err)
 	}
 
-	// 1. create new file with tmpKey
-	tmpKey := getTmpKey(key)
-	if err := ds.create(tmpKey, contents); err != nil {
-		return nil, err
+	klog.V(4).Infof("find key %s exist when updating it", key.Key())
+	ok, err := ds.ifFresherThan(old, rv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rv of file %s, %v", absPath, err)
+	}
+	if !ok {
+		return old, storage.ErrUpdateConflict
 	}
 
-	// 2. delete old file by key
-	if err := ds.delete(key); err != nil {
-		ds.delete(tmpKey)
-		return nil, err
+	// update the file
+	tmpPath := filepath.Join(ds.baseDir, getTmpKey(key).Key())
+	if err := ds.fsOperator.Rename(absPath, tmpPath); err != nil {
+		return nil, fmt.Errorf("failed to backup file %s, %v", absPath, err)
 	}
-
-	// 3. rename tmpKey file to key file
-	return nil, os.Rename(filepath.Join(ds.baseDir, tmpKey.Key()), filepath.Join(ds.baseDir, keyStr))
+	if err := ds.fsOperator.Write(absPath, content); err != nil {
+		// We can ensure that the file actually exists, so it should not be ErrNotExists
+		return nil, fmt.Errorf("failed to write to file %s, %v", absPath, err)
+	}
+	if err := ds.fsOperator.DeleteFile(tmpPath); err != nil {
+		return nil, fmt.Errorf("failed to delete backup file %s, %v", tmpPath, err)
+	}
+	return content, nil
 }
 
-// UpdateList will update files under rootKey dir with new files provided in contents.
-// Note: when the contents are empty and the dir already exists, the create function will clean the current dir
-func (ds *diskStorage) UpdateList(rootKey interfaces.Key, contents map[interfaces.Key][]byte, _ map[interfaces.Key]int64, selector string) error {
-	if err := utils.ValidateKey(rootKey, emptyStorageKey); err != nil {
-		return err
+// ListResourceKeysOfComponent will get all names of files recursively under the dir
+// of the resource belonging to the component.
+func (ds *diskStorage) ListResourceKeysOfComponent(component string, resource string) ([]storage.Key, error) {
+	if component == "" {
+		return nil, storage.ErrEmptyComponent
+	}
+	if resource == "" {
+		return nil, storage.ErrEmptyResource
 	}
 
-	if _, err := ds.canUpdateList(rootKey, selector); err != nil {
-		return fmt.Errorf("cannot update list of root key %s, %v", rootKey.Key(), err)
+	rootKey := storageKey(filepath.Join(component, resource))
+	if !ds.lockKey(rootKey) {
+		return nil, storage.ErrStorageAccessConflict
+	}
+	defer ds.unLockKey(rootKey)
+
+	absPath := filepath.Join(ds.baseDir, rootKey.Key())
+	files, err := ds.fsOperator.List(absPath, fs.ListModeFiles, true)
+	if err == fs.ErrNotExists {
+		return nil, storage.ErrStorageNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files at %s, %v", filepath.Join(ds.baseDir, rootKey.Key()), err)
 	}
 
+	keys := make([]storage.Key, len(files))
+	for i := range files {
+		keys = append(keys, storageKey(filepath.Join(absPath, files[i])))
+	}
+	return keys, nil
+}
+
+// ReplaceComponentList will replace the component list in a back-up way.
+// It will first backup the original dir as tmpdir, including all its subdirs, and then clear the
+// original dir and write contents into it. If the yurthub break down and restart, interrupting the previous
+// ReplaceComponentList, the diskStorage will recover the data with backup in the tmpdir.
+func (ds *diskStorage) ReplaceComponentList(component string, resource string, namespace string, selector string, contents map[storage.Key][]byte) error {
+	// validation
+	if component == "" {
+		return storage.ErrEmptyComponent
+	}
+	if resource == "" {
+		return storage.ErrEmptyResource
+	}
+
+	rootKey := storageKey(filepath.Join(component, resource, namespace))
 	for key := range contents {
-		if !strings.Contains(key.Key(), rootKey.Key()) {
-			return errors.ErrRootKeyInvalid
+		if !strings.HasPrefix(key.Key(), rootKey.Key()) {
+			return storage.ErrRootKeyInvalid
 		}
+	}
+
+	if ok, err := ds.canReplace(rootKey, selector); !ok {
+		return fmt.Errorf("cannot replace %s, %v", rootKey.Key(), err)
 	}
 
 	if !ds.lockKey(rootKey) {
-		return errors.ErrStorageAccessConflict
+		return storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(rootKey)
 
@@ -406,88 +298,79 @@ func (ds *diskStorage) UpdateList(rootKey interfaces.Key, contents map[interface
 	absPath := filepath.Join(ds.baseDir, rootKey.Key())
 	tmpRootKey := getTmpKey(rootKey)
 	tmpPath := filepath.Join(ds.baseDir, tmpRootKey.Key())
-	dirExisted := false
-	if info, err := os.Stat(absPath); err == nil {
-		if info.IsDir() {
-			err := os.Rename(absPath, tmpPath)
-			if err != nil {
-				return err
-			}
-			dirExisted = true
+	if !fs.IfExists(absPath) {
+		if err := ds.fsOperator.CreateDir(absPath); err != nil {
+			return fmt.Errorf("failed to create dir at %s", absPath)
 		}
+	}
+	if ok, err := fs.IsDir(absPath); err == nil && !ok {
+		return fmt.Errorf("%s is not a dir", absPath)
+	} else if err != nil {
+		return fmt.Errorf("failed to check the path %s, %v", absPath, err)
+	}
+	// absPath exists and is a dir
+	if err := ds.fsOperator.Rename(absPath, tmpPath); err != nil {
+		return err
 	}
 
 	// 2. create new file with contents
 	// TODO: if error happens, we may need retry mechanism, or add some mechanism to do consistency check.
-	if len(contents) != 0 {
-		for key, data := range contents {
-			err := ds.create(key, data)
-			if err != nil {
-				klog.Errorf("failed to create %s in replace, %v", key, err)
-				continue
-			}
+	for key, data := range contents {
+		path := filepath.Join(ds.baseDir, key.Key())
+		if err := ds.fsOperator.CreateDir(filepath.Dir(path)); err != nil && err != fs.ErrExists {
+			klog.Errorf("failed to create dir at %s, %v", filepath.Dir(path), err)
+			continue
 		}
+		if err := ds.fsOperator.CreateFile(path, data); err != nil {
+			klog.Errorf("failed to write data to %s, %v", path, err)
+			continue
+		}
+		klog.V(4).Infof("[diskStorage] ReplaceComponentList store data at %s", path)
 	}
 
 	//  3. delete old tmp dir
-	if dirExisted {
-		return os.RemoveAll(tmpPath)
-	}
-
-	return nil
+	return os.RemoveAll(tmpPath)
 }
 
-// DeleteCollection delete file or dir that specified by rootKey
-func (ds *diskStorage) DeleteCollection(rootKey interfaces.Key) error {
-	if err := utils.ValidateKey(rootKey, emptyStorageKey); err != nil {
-		return err
+// DeleteComponentResources will delete all resources cached for component.
+func (ds *diskStorage) DeleteComponentResources(component string) error {
+	if component == "" {
+		return storage.ErrEmptyComponent
 	}
 
+	rootKey := storageKey(component)
 	if !ds.lockKey(rootKey) {
-		return errors.ErrStorageAccessConflict
+		return storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(rootKey)
 
 	absKey := filepath.Join(ds.baseDir, rootKey.Key())
-	info, err := os.Stat(absKey)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	} else if info.Mode().IsRegular() {
-		return os.Remove(absKey)
-	} else if info.IsDir() {
-		return os.RemoveAll(absKey)
+	if err := ds.fsOperator.DeleteDir(absKey); err != nil {
+		return fmt.Errorf("failed to delete path %s, %v", absKey, err)
 	}
-
-	return fmt.Errorf("%s is exist, but not recognized, %v", rootKey, info.Mode())
+	return nil
 }
 
-// Recover recover storage error
-func (ds *diskStorage) Recover(key interfaces.Key) error {
-	if !ds.lockKey(key) {
-		return nil
-	}
-	defer ds.unLockKey(key)
-
-	dir := filepath.Join(ds.baseDir, key.Key())
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+// Recover will walk the baseDir of this diskStorage, and try to recover the storage
+// using backup file. It works when yurthub or the node breaks down and restart.
+func (ds *diskStorage) Recover() error {
+	err := filepath.Walk(ds.baseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.Mode().IsRegular() {
-			if isTmpFile(path) {
-				tmpKey := strings.TrimPrefix(path, ds.baseDir)
-				key := getKey(tmpKey)
-				keyPath := filepath.Join(ds.baseDir, key)
-				iErr := os.Rename(path, keyPath)
-				if iErr != nil {
-					klog.V(2).Infof("failed to recover bytes %s, %v", tmpKey, err)
-					return nil
+		if isTmpFile(path) {
+			switch {
+			case info.Mode().IsDir():
+				if err := ds.recoverDir(path); err != nil {
+					return fmt.Errorf("failed to recover dir %s, %v", path, err)
 				}
-				klog.V(2).Infof("bytes %s recovered successfully", key)
+			case info.Mode().IsRegular():
+				if err := ds.recoverFile(path); err != nil {
+					return fmt.Errorf("failed to recover file %s, %v", path, err)
+				}
+			default:
+				klog.Warningf("unrecognized file %s when recovering diskStorage", path)
 			}
 		}
 
@@ -497,7 +380,49 @@ func (ds *diskStorage) Recover(key interfaces.Key) error {
 	return err
 }
 
-func (ds *diskStorage) lockKey(key interfaces.Key) bool {
+func (ds *diskStorage) recoverFile(tmpPath string) error {
+	tmpKey := strings.TrimPrefix(tmpPath, ds.baseDir)
+	key := getKey(tmpKey)
+	path := filepath.Join(ds.baseDir, key)
+	if fs.IfExists(path) {
+		if ok, err := fs.IsRegularFile(path); err == nil && ok {
+			if dErr := ds.fsOperator.DeleteFile(path); dErr != nil {
+				return fmt.Errorf("failed to delete file at %s, %v", path, dErr)
+			}
+		} else if err != nil {
+			return err
+		} else {
+			return fmt.Errorf("path at %s is not a regular file", path)
+		}
+	}
+	if err := ds.fsOperator.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ds *diskStorage) recoverDir(tmpPath string) error {
+	tmpKey := strings.TrimPrefix(tmpPath, ds.baseDir)
+	key := getKey(tmpKey)
+	path := filepath.Join(ds.baseDir, key)
+	if fs.IfExists(path) {
+		if ok, err := fs.IsDir(path); err == nil && ok {
+			if dErr := ds.fsOperator.DeleteDir(path); dErr != nil {
+				return fmt.Errorf("failed to delete dir at %s, %v", path, dErr)
+			}
+		} else if err != nil {
+			return err
+		} else {
+			return fmt.Errorf("path at %s is not a dir", path)
+		}
+	}
+	if err := ds.fsOperator.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ds *diskStorage) lockKey(key storage.Key) bool {
 	keyStr := key.Key()
 	ds.Lock()
 	defer ds.Unlock()
@@ -523,7 +448,7 @@ func (ds *diskStorage) lockKey(key interfaces.Key) bool {
 	return true
 }
 
-func (ds *diskStorage) canUpdateList(key interfaces.Key, selector string) (bool, error) {
+func (ds *diskStorage) canReplace(key storage.Key, selector string) (bool, error) {
 	keyStr := key.Key()
 	ds.Lock()
 	defer ds.Unlock()
@@ -556,13 +481,30 @@ func (ds *diskStorage) canUpdateList(key interfaces.Key, selector string) (bool,
 	return true, nil
 }
 
-func (ds *diskStorage) unLockKey(key interfaces.Key) {
+func (ds *diskStorage) ifFresherThan(oldObj []byte, newRV uint64) (bool, error) {
+	// check resource version
+	unstructuredObj := &unstructured.Unstructured{}
+	curObj, _, err := ds.serializer.Decode(oldObj, nil, unstructuredObj)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode obj, %v", err)
+	}
+	curRv, err := ObjectResourceVersion(curObj)
+	if err != nil {
+		return false, fmt.Errorf("failed to get rv of obj, %v", err)
+	}
+	if newRV < curRv {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (ds *diskStorage) unLockKey(key storage.Key) {
 	ds.Lock()
 	defer ds.Unlock()
 	delete(ds.keyPendingStatus, key.Key())
 }
 
-func getTmpKey(key interfaces.Key) storageKey {
+func getTmpKey(key storage.Key) storageKey {
 	dir, file := filepath.Split(key.Key())
 	return storageKey(filepath.Join(dir, fmt.Sprintf("%s%s", tmpPrefix, file)))
 }

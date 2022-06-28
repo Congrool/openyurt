@@ -36,7 +36,7 @@ import (
 	manager "github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
 	hubmeta "github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/meta"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/util"
-	storageerrors "github.com/openyurtio/openyurt/pkg/yurthub/storage/errors"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 	hubutil "github.com/openyurtio/openyurt/pkg/yurthub/util"
 )
 
@@ -207,7 +207,7 @@ func (lp *LocalProxy) localReqCache(w http.ResponseWriter, req *http.Request) er
 	}
 
 	obj, err := lp.cacheMgr.QueryCache(req)
-	if errors.Is(err, storageerrors.ErrStorageNotFound) || errors.Is(err, hubmeta.ErrGVRNotRecognized) {
+	if errors.Is(err, storage.ErrStorageNotFound) || errors.Is(err, hubmeta.ErrGVRNotRecognized) {
 		klog.Errorf("object not found for %s", hubutil.ReqString(req))
 		reqInfo, _ := apirequest.RequestInfoFrom(req.Context())
 		return apierrors.NewNotFound(schema.GroupResource{Group: reqInfo.APIGroup, Resource: reqInfo.Resource}, reqInfo.Name)
