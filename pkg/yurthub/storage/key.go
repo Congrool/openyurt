@@ -2,6 +2,7 @@ package storage
 
 type Key interface {
 	Key() string
+	IsRootKey() bool
 }
 
 type KeyBuildInfo struct {
