@@ -44,14 +44,13 @@ const (
 
 // TODO: lock should block, and also add comment about it
 // TODO: should optimize the efficiency of the lock mechanism
-// TODO: update comment for each function
 type diskStorage struct {
 	sync.Mutex
-	baseDir               string
-	keyPendingStatus      map[string]struct{}
-	serializer            runtime.Serializer
-	listSelectorCollector map[string]string
-	fsOperator            *fs.FileSystemOperator
+	baseDir          string
+	keyPendingStatus map[string]struct{}
+	serializer       runtime.Serializer
+	// listSelectorCollector map[string]string
+	fsOperator *fs.FileSystemOperator
 }
 
 // NewDiskStorage creates a storage.Store for caching data into local disk
@@ -65,6 +64,9 @@ func NewDiskStorage(dir string) (storage.Store, error) {
 			return nil, err
 		}
 	}
+
+	// prune suffix "/" of dir
+	dir = strings.TrimSuffix(dir, "/")
 
 	ds := &diskStorage{
 		keyPendingStatus: make(map[string]struct{}),
@@ -90,7 +92,7 @@ func (ds *diskStorage) Name() string {
 
 // Create will create a new file with content. key indicates the path of the file.
 func (ds *diskStorage) Create(key storage.Key, content []byte) error {
-	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
+	if err := utils.ValidateKey(key, storageKey{}); err != nil {
 		return err
 	}
 	if !ds.lockKey(key) {
@@ -99,6 +101,10 @@ func (ds *diskStorage) Create(key storage.Key, content []byte) error {
 	defer ds.unLockKey(key)
 
 	path := filepath.Join(ds.baseDir, key.Key())
+	if key.IsRootKey() {
+		// If it is rootKey, create the dir for it. Refer to #258.
+		return ds.fsOperator.CreateDir(path)
+	}
 	err := ds.fsOperator.CreateFile(path, content)
 	if err == fs.ErrExists {
 		return storage.ErrKeyExists
@@ -111,7 +117,7 @@ func (ds *diskStorage) Create(key storage.Key, content []byte) error {
 
 // Delete will delete the file that specified by key.
 func (ds *diskStorage) Delete(key storage.Key) error {
-	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
+	if err := utils.ValidateKey(key, storageKey{}); err != nil {
 		return err
 	}
 
@@ -121,6 +127,9 @@ func (ds *diskStorage) Delete(key storage.Key) error {
 	defer ds.unLockKey(key)
 
 	path := filepath.Join(ds.baseDir, key.Key())
+	if key.IsRootKey() {
+		return ds.fsOperator.DeleteDir(path)
+	}
 	if err := ds.fsOperator.DeleteFile(path); err != nil {
 		return fmt.Errorf("failed to delete file %s, %v", path, err)
 	}
@@ -129,8 +138,9 @@ func (ds *diskStorage) Delete(key storage.Key) error {
 }
 
 // Get will get content from the regular file that specified by key.
+// If key points to a dir, return ErrKeyHasNoContent.
 func (ds *diskStorage) Get(key storage.Key) ([]byte, error) {
-	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
+	if err := utils.ValidateKey(key, storageKey{}); err != nil {
 		return []byte{}, storage.ErrKeyIsEmpty
 	}
 
@@ -153,10 +163,10 @@ func (ds *diskStorage) Get(key storage.Key) ([]byte, error) {
 	}
 }
 
-// List will get contents of all files directly recursively under the root dir pointed by the rootKey.
-// If the root dir pointed by the rootKey does not exist, return ErrStorageNotFound.
+// List will get contents of all files recursively under the root dir pointed by the rootKey.
+// If the root dir of this rootKey does not exist, return ErrStorageNotFound.
 func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
-	if err := utils.ValidateKey(key, emptyStorageKey); err != nil {
+	if err := utils.ValidateKey(key, storageKey{}); err != nil {
 		return [][]byte{}, storage.ErrKeyIsEmpty
 	}
 
@@ -164,6 +174,10 @@ func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 		return nil, storage.ErrStorageAccessConflict
 	}
 	defer ds.unLockKey(key)
+
+	if !key.IsRootKey() {
+		return nil, storage.ErrIsNotRootKey
+	}
 
 	bb := make([][]byte, 0)
 	absPath := filepath.Join(ds.baseDir, key.Key())
@@ -174,11 +188,10 @@ func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all files under %s, %v", absPath, err)
 	}
-	for _, file := range files {
-		path := filepath.Join(absPath, file)
-		buf, err := ds.fsOperator.Read(path)
+	for _, filePath := range files {
+		buf, err := ds.fsOperator.Read(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read file at %s, %v", path, err)
+			return nil, fmt.Errorf("failed to read file at %s, %v", filePath, err)
 		}
 		bb = append(bb, buf)
 	}
@@ -191,8 +204,12 @@ func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 // Update works in a backup way, which means it will first backup the original file, and then
 // write the content into it.
 func (ds *diskStorage) Update(key storage.Key, content []byte, rv uint64) ([]byte, error) {
-	if err := utils.ValidateKV(key, content, emptyStorageKey); err != nil {
+	if err := utils.ValidateKV(key, content, storageKey{}); err != nil {
 		return nil, err
+	}
+
+	if key.IsRootKey() {
+		return nil, storage.ErrIsNotObjectKey
 	}
 
 	if !ds.lockKey(key) {
@@ -209,7 +226,7 @@ func (ds *diskStorage) Update(key storage.Key, content []byte, rv uint64) ([]byt
 		return nil, fmt.Errorf("failed to read file at %s, %v", absPath, err)
 	}
 
-	klog.V(4).Infof("find key %s exist when updating it", key.Key())
+	klog.V(4).Infof("find key %s exists when updating it", key.Key())
 	ok, err := ds.ifFresherThan(old, rv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rv of file %s, %v", absPath, err)
@@ -223,7 +240,7 @@ func (ds *diskStorage) Update(key storage.Key, content []byte, rv uint64) ([]byt
 	if err := ds.fsOperator.Rename(absPath, tmpPath); err != nil {
 		return nil, fmt.Errorf("failed to backup file %s, %v", absPath, err)
 	}
-	if err := ds.fsOperator.Write(absPath, content); err != nil {
+	if err := ds.fsOperator.CreateFile(absPath, content); err != nil {
 		// We can ensure that the file actually exists, so it should not be ErrNotExists
 		return nil, fmt.Errorf("failed to write to file %s, %v", absPath, err)
 	}
@@ -236,14 +253,14 @@ func (ds *diskStorage) Update(key storage.Key, content []byte, rv uint64) ([]byt
 // ListResourceKeysOfComponent will get all names of files recursively under the dir
 // of the resource belonging to the component.
 func (ds *diskStorage) ListResourceKeysOfComponent(component string, resource string) ([]storage.Key, error) {
-	if component == "" {
-		return nil, storage.ErrEmptyComponent
-	}
-	if resource == "" {
-		return nil, storage.ErrEmptyResource
+	rootKey, err := ds.KeyFunc(storage.KeyBuildInfo{
+		Component: component,
+		Resources: resource,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	rootKey := storageKey(filepath.Join(component, resource))
 	if !ds.lockKey(rootKey) {
 		return nil, storage.ErrStorageAccessConflict
 	}
@@ -259,8 +276,21 @@ func (ds *diskStorage) ListResourceKeysOfComponent(component string, resource st
 	}
 
 	keys := make([]storage.Key, len(files))
-	for i := range files {
-		keys = append(keys, storageKey(filepath.Join(absPath, files[i])))
+	for i, filePath := range files {
+		_, _, ns, n, err := extractInfoFromPath(ds.baseDir, filePath, false)
+		if err != nil {
+			klog.Errorf("failed when list keys of resource %s of component %s, %v", component, resource, err)
+			continue
+		}
+		// We can ensure that component and resource can't be empty
+		// so ignore the err.
+		key, _ := ds.KeyFunc(storage.KeyBuildInfo{
+			Component: component,
+			Resources: resource,
+			Namespace: ns,
+			Name:      n,
+		})
+		keys[i] = key
 	}
 	return keys, nil
 }
@@ -269,25 +299,25 @@ func (ds *diskStorage) ListResourceKeysOfComponent(component string, resource st
 // It will first backup the original dir as tmpdir, including all its subdirs, and then clear the
 // original dir and write contents into it. If the yurthub break down and restart, interrupting the previous
 // ReplaceComponentList, the diskStorage will recover the data with backup in the tmpdir.
-func (ds *diskStorage) ReplaceComponentList(component string, resource string, namespace string, selector string, contents map[storage.Key][]byte) error {
-	// validation
-	if component == "" {
-		return storage.ErrEmptyComponent
-	}
-	if resource == "" {
-		return storage.ErrEmptyResource
+func (ds *diskStorage) ReplaceComponentList(component string, resource string, namespace string, contents map[storage.Key][]byte) error {
+	rootKey, err := ds.KeyFunc(storage.KeyBuildInfo{
+		Component: component,
+		Resources: resource,
+		Namespace: namespace,
+	})
+	if err != nil {
+		return err
 	}
 
-	rootKey := storageKey(filepath.Join(component, resource, namespace))
 	for key := range contents {
 		if !strings.HasPrefix(key.Key(), rootKey.Key()) {
-			return storage.ErrRootKeyInvalid
+			return storage.ErrInvalidContent
 		}
 	}
 
-	if ok, err := ds.canReplace(rootKey, selector); !ok {
-		return fmt.Errorf("cannot replace %s, %v", rootKey.Key(), err)
-	}
+	// if ok, err := ds.canReplace(rootKey, selector); !ok {
+	// 	return fmt.Errorf("cannot replace %s, %v", rootKey.Key(), err)
+	// }
 
 	if !ds.lockKey(rootKey) {
 		return storage.ErrStorageAccessConflict
@@ -337,8 +367,10 @@ func (ds *diskStorage) DeleteComponentResources(component string) error {
 	if component == "" {
 		return storage.ErrEmptyComponent
 	}
-
-	rootKey := storageKey(component)
+	rootKey := storageKey{
+		path:      component,
+		isRootKey: true,
+	}
 	if !ds.lockKey(rootKey) {
 		return storage.ErrStorageAccessConflict
 	}
@@ -448,38 +480,39 @@ func (ds *diskStorage) lockKey(key storage.Key) bool {
 	return true
 }
 
-func (ds *diskStorage) canReplace(key storage.Key, selector string) (bool, error) {
-	keyStr := key.Key()
-	ds.Lock()
-	defer ds.Unlock()
-	if oldSelector, ok := ds.listSelectorCollector[keyStr]; ok {
-		if oldSelector != selector {
-			// list requests that have the same path but with different selector, for example:
-			// request1: http://{ip:port}/api/v1/default/pods?labelSelector=foo=bar
-			// request2: http://{ip:port}/api/v1/default/pods?labelSelector=foo2=bar2
-			// because func queryListObject() will get all pods for both requests instead of
-			// getting pods by request selector. so cache manager can not support same path list
-			// requests that has different selector.
-			klog.Warningf("list requests that have the same path but with different selector, skip cache for %s", keyStr)
-			return false, fmt.Errorf("selector conflict, old selector is %s, current selector is %s", oldSelector, selector)
-		}
-	} else {
-		// list requests that get the same resources but with different path, for example:
-		// request1: http://{ip/port}/api/v1/pods?fieldSelector=spec.nodeName=foo
-		// request2: http://{ip/port}/api/v1/default/pods?fieldSelector=spec.nodeName=foo
-		// because func queryListObject() will get all pods for both requests instead of
-		// getting pods by request selector. so cache manager can not support getting same resource
-		// list requests that has different path.
-		for k := range ds.listSelectorCollector {
-			if (len(k) > len(keyStr) && strings.Contains(k, keyStr)) || (len(k) < len(keyStr) && strings.Contains(keyStr, k)) {
-				klog.Warningf("list requests that get the same resources but with different path, skip cache for %s", key)
-				return false, fmt.Errorf("path conflict, old path is %s, current path is %s", k, keyStr)
-			}
-		}
-		ds.listSelectorCollector[keyStr] = selector
-	}
-	return true, nil
-}
+// TODO: move to cache manager
+// func (ds *diskStorage) canReplace(key storage.Key, selector string) (bool, error) {
+// 	keyStr := key.Key()
+// 	ds.Lock()
+// 	defer ds.Unlock()
+// 	if oldSelector, ok := ds.listSelectorCollector[keyStr]; ok {
+// 		if oldSelector != selector {
+// 			// list requests that have the same path but with different selector, for example:
+// 			// request1: http://{ip:port}/api/v1/default/pods?labelSelector=foo=bar
+// 			// request2: http://{ip:port}/api/v1/default/pods?labelSelector=foo2=bar2
+// 			// because func queryListObject() will get all pods for both requests instead of
+// 			// getting pods by request selector. so cache manager can not support same path list
+// 			// requests that has different selector.
+// 			klog.Warningf("list requests that have the same path but with different selector, skip cache for %s", keyStr)
+// 			return false, fmt.Errorf("selector conflict, old selector is %s, current selector is %s", oldSelector, selector)
+// 		}
+// 	} else {
+// 		// list requests that get the same resources but with different path, for example:
+// 		// request1: http://{ip/port}/api/v1/pods?fieldSelector=spec.nodeName=foo
+// 		// request2: http://{ip/port}/api/v1/default/pods?fieldSelector=spec.nodeName=foo
+// 		// because func queryListObject() will get all pods for both requests instead of
+// 		// getting pods by request selector. so cache manager can not support getting same resource
+// 		// list requests that has different path.
+// 		for k := range ds.listSelectorCollector {
+// 			if (len(k) > len(keyStr) && strings.Contains(k, keyStr)) || (len(k) < len(keyStr) && strings.Contains(keyStr, k)) {
+// 				klog.Warningf("list requests that get the same resources but with different path, skip cache for %s", key)
+// 				return false, fmt.Errorf("path conflict, old path is %s, current path is %s", k, keyStr)
+// 			}
+// 		}
+// 		ds.listSelectorCollector[keyStr] = selector
+// 	}
+// 	return true, nil
+// }
 
 func (ds *diskStorage) ifFresherThan(oldObj []byte, newRV uint64) (bool, error) {
 	// check resource version
@@ -506,7 +539,10 @@ func (ds *diskStorage) unLockKey(key storage.Key) {
 
 func getTmpKey(key storage.Key) storageKey {
 	dir, file := filepath.Split(key.Key())
-	return storageKey(filepath.Join(dir, fmt.Sprintf("%s%s", tmpPrefix, file)))
+	return storageKey{
+		path:      filepath.Join(dir, fmt.Sprintf("%s%s", tmpPrefix, file)),
+		isRootKey: key.IsRootKey(),
+	}
 }
 
 func isTmpFile(path string) bool {
@@ -517,6 +553,37 @@ func isTmpFile(path string) bool {
 func getKey(tmpKey string) string {
 	dir, file := filepath.Split(tmpKey)
 	return filepath.Join(dir, strings.TrimPrefix(file, tmpPrefix))
+}
+
+func extractInfoFromPath(baseDir, path string, isRoot bool) (component, resource, namespace, name string, err error) {
+	if !strings.HasPrefix(path, baseDir) {
+		err = fmt.Errorf("path %s does not under %s", path, baseDir)
+		return
+	}
+	trimedPath := strings.TrimPrefix(path, baseDir)
+	trimedPath = strings.TrimPrefix(trimedPath, "/")
+	elems := strings.Split(trimedPath, "/")
+	if len(elems) > 4 {
+		err = fmt.Errorf("invalid path %s", path)
+		return
+	}
+	switch len(elems) {
+	case 0:
+	case 1:
+		component = elems[0]
+	case 2:
+		component, resource = elems[0], elems[1]
+	case 3:
+		component, resource = elems[0], elems[1]
+		if isRoot {
+			namespace = elems[2]
+		} else {
+			name = elems[2]
+		}
+	case 4:
+		component, resource, namespace, name = elems[0], elems[1], elems[2], elems[3]
+	}
+	return
 }
 
 func ObjectResourceVersion(obj runtime.Object) (uint64, error) {
