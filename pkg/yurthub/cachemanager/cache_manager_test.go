@@ -2568,6 +2568,8 @@ func TestQueryCacheForList(t *testing.T) {
 				data: map[string]struct{}{},
 			},
 		},
+		// TODO:
+		// with name fieldSelector
 	}
 
 	accessor := meta.NewAccessor()
