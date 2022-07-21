@@ -1544,8 +1544,8 @@ func TestCacheListResponse(t *testing.T) {
 				if err != nil {
 					// If error is storage.ErrStorageNotFound, it means that no object is cached in the hard disk
 					if errors.Is(err, storage.ErrStorageNotFound) {
-						if len(tt.expectResult.data) != 0 {
-							t.Errorf("expect %v objects, but get nothing.", len(tt.expectResult.data))
+						if tt.expectResult.data != nil {
+							t.Errorf("expect %v objects, but get nil.", len(tt.expectResult.data))
 						}
 					} else {
 						t.Errorf("got unexpected error %v", err)
@@ -2199,7 +2199,6 @@ func TestQueryCacheForList(t *testing.T) {
 
 	testcases := map[string]struct {
 		keyBuildInfo storage.KeyBuildInfo
-		noObjs       bool
 		cachedKind   string
 		inputObj     []runtime.Object
 		userAgent    string
@@ -2360,7 +2359,9 @@ func TestQueryCacheForList(t *testing.T) {
 				Component: "kubelet",
 				Resources: "runtimeclasses",
 			},
-			noObjs:     true,
+			inputObj: []runtime.Object{
+				&unstructured.Unstructured{},
+			},
 			userAgent:  "kubelet",
 			accept:     "application/json",
 			verb:       "GET",
@@ -2380,7 +2381,6 @@ func TestQueryCacheForList(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 			},
-			noObjs:     true,
 			userAgent:  "kubelet",
 			accept:     "application/json",
 			verb:       "GET",
@@ -2521,8 +2521,10 @@ func TestQueryCacheForList(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 			},
-			noObjs:     true,
 			cachedKind: "samplecontroller.k8s.io/v1/Foo",
+			inputObj: []runtime.Object{
+				&unstructured.Unstructured{},
+			},
 			userAgent:  "kubelet",
 			accept:     "application/json",
 			verb:       "GET",
@@ -2565,7 +2567,8 @@ func TestQueryCacheForList(t *testing.T) {
 				rv       string
 				data     map[string]struct{}
 			}{
-				data: map[string]struct{}{},
+				err:      true,
+				queryErr: storage.ErrStorageNotFound,
 			},
 		},
 		// TODO:
