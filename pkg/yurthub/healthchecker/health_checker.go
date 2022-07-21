@@ -172,7 +172,13 @@ func (hcm *healthCheckerManager) setLastNodeLease(lease *coordinationv1.Lease) e
 	if err != nil {
 		return fmt.Errorf("failed to convert rv string %s of lease %s/%s, %v", lease.ResourceVersion, lease.Namespace, lease.Name, err)
 	}
-	if _, err := hcm.sw.Update(leaseKey, lease, rv); err != nil {
+	_, err = hcm.sw.Update(leaseKey, lease, rv)
+	if err == storage.ErrStorageNotFound {
+		klog.Infof("find no lease of %s in storage, init a new one", leaseKey.Key())
+		if err := hcm.sw.Create(leaseKey, lease); err != nil {
+			return fmt.Errorf("failed to create the lease %s, %v", leaseKey.Key(), err)
+		}
+	} else if err != nil {
 		return fmt.Errorf("failed to update lease %s/%s, %v", lease.Namespace, lease.Name, err)
 	}
 	return nil
