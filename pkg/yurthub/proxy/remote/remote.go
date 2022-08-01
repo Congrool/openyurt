@@ -217,7 +217,7 @@ func (rp *RemoteProxy) errorHandler(rw http.ResponseWriter, req *http.Request, e
 	ctx := req.Context()
 	if info, ok := apirequest.RequestInfoFrom(ctx); ok {
 		if info.Verb == "get" || info.Verb == "list" {
-			if obj, err := rp.cacheMgr.QueryCache(req); err == nil {
+			if obj, err := rp.cacheMgr.QueryResourceFromCache(req); err == nil {
 				util.WriteObject(http.StatusOK, obj, rw, req)
 				return
 			}

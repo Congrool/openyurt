@@ -206,7 +206,7 @@ func (lp *LocalProxy) localReqCache(w http.ResponseWriter, req *http.Request) er
 		return apierrors.NewBadRequest(fmt.Sprintf("can not cache for %s", hubutil.ReqString(req)))
 	}
 
-	obj, err := lp.cacheMgr.QueryCache(req)
+	obj, err := lp.cacheMgr.QueryResourceFromCache(req)
 	if errors.Is(err, storage.ErrStorageNotFound) || errors.Is(err, hubmeta.ErrGVRNotRecognized) {
 		klog.Errorf("object not found for %s", hubutil.ReqString(req))
 		reqInfo, _ := apirequest.RequestInfoFrom(req.Context())
