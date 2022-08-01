@@ -55,7 +55,7 @@ var (
 // CacheManager is an adaptor to cache runtime object data into backend storage
 type CacheManager interface {
 	CacheResponse(req *http.Request, prc io.ReadCloser, stopCh <-chan struct{}) error
-	QueryCache(req *http.Request) (runtime.Object, error)
+	QueryResourceFromCache(req *http.Request) (runtime.Object, error)
 	CanCacheFor(req *http.Request) bool
 	DeleteKindFor(gvr schema.GroupVersionResource) error
 }
@@ -96,10 +96,6 @@ func NewCacheManager(
 func (cm *cacheManager) CacheResponse(req *http.Request, prc io.ReadCloser, stopCh <-chan struct{}) error {
 	ctx := req.Context()
 	info, _ := apirequest.RequestInfoFrom(ctx)
-	if isWatch(ctx) {
-		return cm.saveWatchObject(ctx, info, prc, stopCh)
-	}
-
 	var buf bytes.Buffer
 	n, err := buf.ReadFrom(prc)
 	if err != nil {
@@ -113,6 +109,9 @@ func (cm *cacheManager) CacheResponse(req *http.Request, prc io.ReadCloser, stop
 		klog.V(5).Infof("cache %d bytes from response for %s", n, util.ReqInfoString(info))
 	}
 
+	if isWatch(ctx) {
+		return cm.saveWatchObject(ctx, info, prc, stopCh)
+	}
 	if isList(ctx) {
 		return cm.saveListObject(ctx, info, buf.Bytes())
 	}
@@ -120,8 +119,8 @@ func (cm *cacheManager) CacheResponse(req *http.Request, prc io.ReadCloser, stop
 	return cm.saveOneObject(ctx, info, buf.Bytes())
 }
 
-// QueryCache get runtime object from backend storage for request
-func (cm *cacheManager) QueryCache(req *http.Request) (runtime.Object, error) {
+// QueryResourceFromCache get runtime object from backend storage for request
+func (cm *cacheManager) QueryResourceFromCache(req *http.Request) (runtime.Object, error) {
 	ctx := req.Context()
 	info, ok := apirequest.RequestInfoFrom(ctx)
 	if !ok || info == nil || info.Resource == "" {

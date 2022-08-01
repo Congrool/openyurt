@@ -2131,7 +2131,7 @@ func TestQueryCacheForGet(t *testing.T) {
 			var name, ns, rv, kind string
 			var obj runtime.Object
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				obj, err = yurtCM.QueryCache(req)
+				obj, err = yurtCM.QueryResourceFromCache(req)
 				if err == nil {
 					name, _ = accessor.Name(obj)
 					rv, _ = accessor.ResourceVersion(obj)
@@ -2183,6 +2183,90 @@ func TestQueryCacheForGet(t *testing.T) {
 		t.Errorf("Got error %v, unable to remove path %s", err, rootDir)
 	}
 }
+
+// func TestQueryCacheForGetClusterInfo(t *testing.T) {
+// 	dStorage, err := disk.NewDiskStorage(rootDir)
+// 	if err != nil {
+// 		t.Errorf("failed to create disk storage, %v", err)
+// 	}
+// 	sWrapper := NewStorageWrapper(dStorage)
+// 	serializerM := serializer.NewSerializerManager()
+// 	restRESTMapperMgr, err := hubmeta.NewRESTMapperManager(rootDir)
+// 	if err != nil {
+// 		t.Errorf("failed to create RESTMapper manager, %v", err)
+// 	}
+// 	yurtCM := NewCacheManager(sWrapper, serializerM, restRESTMapperMgr, fakeSharedInformerFactory)
+
+// 	testcases := map[string]struct {
+// 		path         string
+// 		inputInfo    []byte
+// 		expectResult struct {
+// 			expectInfo []byte
+// 			expectErr  error
+// 		}
+// 	}{
+// 		"query version info": {
+// 			path:      "/version",
+// 			inputInfo: []byte(versionBytes),
+// 			expectResult: struct {
+// 				expectInfo []byte
+// 				expectErr  error
+// 			}{
+// 				expectInfo: []byte(versionBytes),
+// 				expectErr:  nil,
+// 			},
+// 		},
+// 		"query version info with parameters": {
+// 			path:      "/version?timeout=32s",
+// 			inputInfo: []byte(versionBytes),
+// 			expectResult: struct {
+// 				expectInfo []byte
+// 				expectErr  error
+// 			}{
+// 				expectInfo: []byte(versionBytes),
+// 				expectErr:  nil,
+// 			},
+// 		},
+// 		"query version info not existing": {
+// 			path:      "/version",
+// 			inputInfo: nil,
+// 			expectResult: struct {
+// 				expectInfo []byte
+// 				expectErr  error
+// 			}{
+// 				expectInfo: nil,
+// 				expectErr:  storage.ErrStorageNotFound,
+// 			},
+// 		},
+// 		"query unknown ClusterInfoType": {
+// 			path:      "/any-path",
+// 			inputInfo: nil,
+// 			expectResult: struct {
+// 				expectInfo []byte
+// 				expectErr  error
+// 			}{
+// 				expectInfo: nil,
+// 				expectErr:  storage.ErrUnknownClusterInfoType,
+// 			},
+// 		},
+// 	}
+
+// 	resolver := newTestRequestInfoResolver()
+// 	for k, tt := range testcases {
+// 		t.Run(k, func(t *testing.T) {
+// 			var err error
+// 			req, _ := http.NewRequest("GET", tt.path, nil)
+// 			var buf []byte
+// 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 				buf, err = yurtCM.QueryClusterInfoFromCache(req)
+// 			})
+// 			handler = filters.WithRequestInfo(handler, resolver)
+// 			if tt.inputInfo != nil {
+// 				sWrapper.SaveClusterInfo()
+// 			}
+// 		})
+// 	}
+// }
 
 func TestQueryCacheForList(t *testing.T) {
 	dStorage, err := disk.NewDiskStorage(rootDir)
@@ -2617,7 +2701,7 @@ func TestQueryCacheForList(t *testing.T) {
 			var err error
 			var list runtime.Object
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				list, err = yurtCM.QueryCache(req)
+				list, err = yurtCM.QueryResourceFromCache(req)
 				if err == nil {
 					listMetaInterface, err := meta.ListAccessor(list)
 					if err != nil {

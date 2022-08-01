@@ -45,6 +45,8 @@ type StorageWrapper interface {
 	ListResourceKeysOfComponent(component string, resource string) ([]storage.Key, error)
 	ReplaceComponentList(component, resource, namespace string, contents map[storage.Key]runtime.Object) error
 	DeleteComponentResources(component string) error
+	SaveClusterInfo(key storage.ClusterInfoKey, content []byte) error
+	GetClusterInfo(key storage.ClusterInfoKey) ([]byte, error)
 }
 
 type storageWrapper struct {
@@ -96,7 +98,7 @@ func (sw *storageWrapper) Delete(key storage.Key) error {
 
 // Get get the runtime object that specified by key from backend storage
 func (sw *storageWrapper) Get(key storage.Key) (runtime.Object, error) {
-	b, err := sw.GetRaw(key)
+	b, err := sw.store.Get(key)
 	if err != nil {
 		return nil, err
 	} else if len(b) == 0 {
@@ -220,7 +222,10 @@ func (sw *storageWrapper) DeleteComponentResources(component string) error {
 	return sw.store.DeleteComponentResources(component)
 }
 
-// GetRaw get byte data for specified key
-func (sw *storageWrapper) GetRaw(key storage.Key) ([]byte, error) {
-	return sw.store.Get(key)
+func (sw *storageWrapper) SaveClusterInfo(key storage.ClusterInfoKey, content []byte) error {
+	return sw.store.SaveClusterInfo(key, content)
+}
+
+func (sw *storageWrapper) GetClusterInfo(key storage.ClusterInfoKey) ([]byte, error) {
+	return sw.store.GetClusterInfo(key)
 }

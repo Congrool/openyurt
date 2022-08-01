@@ -69,7 +69,9 @@ func NewYurtHubServer(cfg *config.YurtHubConfiguration,
 		klog.Errorf("cannot create the client set: %v", err)
 		return nil, err
 	}
-	registerHandlers(hubMux, cfg, certificateMgr, rest)
+
+	nonResourceRequestWrapper := NewHandleNonResourceRequestWrapper(cfg, clientSet)
+
 	hubServer := &http.Server{
 		Addr:           cfg.YurtHubServerAddr,
 		Handler:        hubMux,
@@ -78,7 +80,7 @@ func NewYurtHubServer(cfg *config.YurtHubConfiguration,
 
 	proxyServer := &http.Server{
 		Addr:    cfg.YurtHubProxyServerAddr,
-		Handler: wrapNonResourceHandler(proxyHandler, cfg, clientSet),
+		Handler: nonResourceRequestWrapper.Wrap(proxyHandler),
 	}
 
 	secureProxyServer := &http.Server{

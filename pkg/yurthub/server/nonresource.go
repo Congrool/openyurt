@@ -23,96 +23,73 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	"github.com/pkg/errors"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	"github.com/openyurtio/openyurt/cmd/yurthub/app/config"
 	"github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
+	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
 )
 
-var nonResourceReqPaths = []string{
-	"/version",
-	"/apis/discovery.k8s.io/v1",
-	"/apis/discovery.k8s.io/v1beta1",
+var nonResourceReqPaths = map[string]storage.ClusterInfoType{
+	"/version":                       storage.Version,
+	"/apis/discovery.k8s.io/v1":      storage.APIResourcesInfo,
+	"/apis/discovery.k8s.io/v1beta1": storage.APIResourcesInfo,
 }
 
-var cfg *config.YurtHubConfiguration
-var clientSet *kubernetes.Clientset
+type handleNonResourceRequestWrapper struct {
+	client  *kubernetes.Clientset
+	storage cachemanager.StorageWrapper
+}
 
-func wrapNonResourceHandler(proxyHandler http.Handler, config *config.YurtHubConfiguration, cs *kubernetes.Clientset) http.Handler {
+func (h *handleNonResourceRequestWrapper) Wrap(handler http.Handler) http.Handler {
 	wrapMux := mux.NewRouter()
-	cfg = config
-	clientSet = cs
-	// register handler for non resource requests
-	for i := range nonResourceReqPaths {
-		wrapMux.HandleFunc(nonResourceReqPaths[i], withNonResourceRequest).Methods("GET")
+	for path := range nonResourceReqPaths {
+		wrapMux.HandleFunc(path, h.cacheNonResourceInfo).Methods("GET")
 	}
-
-	// register handler for other requests
-	wrapMux.PathPrefix("/").Handler(proxyHandler)
+	wrapMux.PathPrefix("/").Handler(handler)
 	return wrapMux
 }
 
-func withNonResourceRequest(w http.ResponseWriter, req *http.Request) {
-	for i := range nonResourceReqPaths {
-		if req.URL.Path == nonResourceReqPaths[i] {
-			cacheNonResourceInfo(w, req, cfg.StorageWrapper, fmt.Sprintf("non-reosurce-info%s", nonResourceReqPaths[i]), nonResourceReqPaths[i], false)
-			break
-		}
-	}
-
-}
-
-func cacheNonResourceInfo(w http.ResponseWriter, req *http.Request, sw cachemanager.StorageWrapper, key string, path string, isFake bool) {
-	nonResourceInfo, err := getClientSetQueryInfo(path, isFake)
+func (h *handleNonResourceRequestWrapper) cacheNonResourceInfo(w http.ResponseWriter, req *http.Request) {
 	copyHeader(w.Header(), req.Header)
+	if _, ok := nonResourceReqPaths[req.URL.Path]; !ok {
+		ErrNonResource(fmt.Errorf("non-resource request %s cannot be recognized", req.URL.Path), w, req)
+		return
+	}
+	clusterInfoKey := storage.ClusterInfoKey{
+		ClusterInfoType: nonResourceReqPaths[req.URL.Path],
+		UrlPath:         req.URL.Path,
+	}
+	// query server
+	nonResourceInfo, err := h.client.RESTClient().Get().AbsPath(req.URL.Path).Do(context.TODO()).Raw()
 	if err == nil {
-		_, err = w.Write(nonResourceInfo)
-		if err != nil {
+		if _, err = w.Write(nonResourceInfo); err != nil {
 			klog.Errorf("failed to write the non-resource info, the error is: %v", err)
 			ErrNonResource(err, w, req)
 			return
 		}
 
-		klog.Infof("success to query the cache non-resource info: %s", key)
-		w.WriteHeader(http.StatusOK)
-		sw.UpdateRaw(key, nonResourceInfo)
+		klog.Infof("success to query the cache non-resource info: %s", clusterInfoKey.UrlPath)
+		if err = h.storage.SaveClusterInfo(clusterInfoKey, nonResourceInfo); err != nil {
+			klog.Errorf("failed to save cluster info in cache for %s, %v", req.URL.Path, err)
+		}
 	} else {
-		infoCache, err := sw.GetRaw(key)
+		// query cache
+		klog.Errorf("failed to query server for request %s, %v, try to use cache", req.URL.Path, err)
+		nonResourceInfo, err = h.storage.GetClusterInfo(clusterInfoKey)
 		if err != nil {
 			klog.Errorf("the non-resource info cannot be acquired, the error is: %v", err)
 			ErrNonResource(err, w, req)
 			return
 		}
-		_, err = w.Write(infoCache)
+		_, err = w.Write(nonResourceInfo)
 		if err != nil {
 			klog.Errorf("failed to write the non-resource info, the error is: %v", err)
-			ErrNonResource(err, w, req)
 			return
 		}
-
-		klog.Infof("success to non-resource info: %s", key)
-		w.WriteHeader(http.StatusOK)
 	}
-
-}
-
-func getClientSetQueryInfo(path string, isFake bool) ([]byte, error) {
-	if clientSet == nil {
-		// used for unit test
-		if isFake {
-			return []byte(fmt.Sprintf("fake-non-resource-info-%s", path)), nil
-		}
-		klog.Errorf("the kubernetes clientSet is nil, and return the fake value for test")
-		return nil, errors.New("the kubernetes clientSet is nil")
-	}
-	nonResourceInfo, err := clientSet.RESTClient().Get().AbsPath(path).Do(context.TODO()).Raw()
-	if err != nil {
-		return nil, err
-	}
-	return nonResourceInfo, nil
 }
 
 func copyHeader(dst, src http.Header) {
@@ -139,4 +116,11 @@ func ErrNonResource(err error, w http.ResponseWriter, req *http.Request) {
 	}
 	klog.Errorf("%v counter the error %v", req.URL, err)
 
+}
+
+func NewHandleNonResourceRequestWrapper(cfg *config.YurtHubConfiguration, client *kubernetes.Clientset) *handleNonResourceRequestWrapper {
+	return &handleNonResourceRequestWrapper{
+		client:  client,
+		storage: cfg.StorageWrapper,
+	}
 }
