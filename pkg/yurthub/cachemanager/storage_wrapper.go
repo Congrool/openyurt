@@ -51,15 +51,17 @@ type StorageWrapper interface {
 
 type storageWrapper struct {
 	sync.RWMutex
-	store             storage.Store
-	backendSerializer runtime.Serializer
+	store            storage.Store
+	universalDecoder runtime.Decoder
+	jsonEncoder      runtime.Encoder
 }
 
 // NewStorageWrapper create a StorageWrapper object
 func NewStorageWrapper(storage storage.Store) StorageWrapper {
 	return &storageWrapper{
-		store:             storage,
-		backendSerializer: json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
+		store:            storage,
+		universalDecoder: scheme.Codecs.UniversalDeserializer(),
+		jsonEncoder:      json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
 	}
 }
 
@@ -78,7 +80,7 @@ func (sw *storageWrapper) KeyFunc(info storage.KeyBuildInfo) (storage.Key, error
 func (sw *storageWrapper) Create(key storage.Key, obj runtime.Object) error {
 	var buf bytes.Buffer
 	if obj != nil {
-		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+		if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in create for %s, %v", key.Key(), err)
 			return err
 		}
@@ -115,7 +117,7 @@ func (sw *storageWrapper) Get(key storage.Key) (runtime.Object, error) {
 	} else {
 		UnstructuredObj = new(unstructured.Unstructured)
 	}
-	obj, gvk, err := sw.backendSerializer.Decode(b, nil, UnstructuredObj)
+	obj, gvk, err := sw.universalDecoder.Decode(b, nil, UnstructuredObj)
 	if err != nil {
 		klog.Errorf("could not decode %v for %s, %v", gvk, key.Key(), err)
 		return nil, err
@@ -156,7 +158,7 @@ func (sw *storageWrapper) List(key storage.Key) ([]runtime.Object, error) {
 			UnstructuredObj = new(unstructured.Unstructured)
 		}
 
-		obj, gvk, err := sw.backendSerializer.Decode(bb[i], nil, UnstructuredObj)
+		obj, gvk, err := sw.universalDecoder.Decode(bb[i], nil, UnstructuredObj)
 		if err != nil {
 			klog.Errorf("could not decode %v for %s, %v", gvk, key.Key(), err)
 			continue
@@ -170,14 +172,14 @@ func (sw *storageWrapper) List(key storage.Key) ([]runtime.Object, error) {
 // Update update runtime object in backend storage
 func (sw *storageWrapper) Update(key storage.Key, obj runtime.Object, rv uint64) (runtime.Object, error) {
 	var buf bytes.Buffer
-	if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+	if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 		klog.Errorf("failed to encode object in update for %s, %v", key.Key(), err)
 		return nil, err
 	}
 
 	if buf, err := sw.store.Update(key, buf.Bytes(), rv); err != nil {
 		if err == storage.ErrUpdateConflict {
-			obj, _, dErr := sw.backendSerializer.Decode(buf, nil, nil)
+			obj, _, dErr := sw.universalDecoder.Decode(buf, nil, nil)
 			if dErr != nil {
 				return nil, fmt.Errorf("failed to decode existing obj of key %s, %v", key.Key(), dErr)
 			}
@@ -194,7 +196,7 @@ func (sw *storageWrapper) ReplaceComponentList(component, resource, namespace st
 	contents := make(map[storage.Key][]byte, len(objs))
 	rvs := make(map[storage.Key]int64, len(objs))
 	for key, obj := range objs {
-		if err := sw.backendSerializer.Encode(obj, &buf); err != nil {
+		if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
 			klog.Errorf("failed to encode object in update for %s, %v", key.Key(), err)
 			return err
 		}
@@ -223,6 +225,19 @@ func (sw *storageWrapper) DeleteComponentResources(component string) error {
 }
 
 func (sw *storageWrapper) SaveClusterInfo(key storage.ClusterInfoKey, content []byte) error {
+	if key.ClusterInfoType == storage.APIResourcesInfo {
+		var buf bytes.Buffer
+		// The content is APIResourceList object.
+		// It cloud be in the format of protobuf, we should convert it to json.
+		obj, _, err := sw.universalDecoder.Decode(content, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to decode APIResources object, %v", err)
+		}
+		if err := sw.jsonEncoder.Encode(obj, &buf); err != nil {
+			return fmt.Errorf("failed to encode APIResources object into json, %v", err)
+		}
+		return sw.store.SaveClusterInfo(key, buf.Bytes())
+	}
 	return sw.store.SaveClusterInfo(key, content)
 }
 
