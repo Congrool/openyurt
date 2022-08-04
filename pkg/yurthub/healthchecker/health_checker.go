@@ -164,6 +164,8 @@ func (hcm *healthCheckerManager) setLastNodeLease(lease *coordinationv1.Lease) e
 		Namespace: lease.Namespace,
 		Name:      lease.Name,
 		Resources: "leases",
+		Group:     "coordination.k8s.io",
+		Version:   "v1",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get key for lease %s/%s, %v", lease.Namespace, lease.Name, err)

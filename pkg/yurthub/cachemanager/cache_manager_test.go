@@ -100,6 +100,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -128,6 +130,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -170,6 +174,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod2",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -211,6 +217,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "mynode1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Node{
 				TypeMeta: metav1.TypeMeta{
@@ -247,6 +255,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "mynode2",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Node{
 				TypeMeta: metav1.TypeMeta{
@@ -285,6 +295,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab1",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -324,6 +336,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab2",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -362,6 +376,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo1",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -398,6 +414,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo2",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -434,6 +452,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "test",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&metav1.Status{
 				TypeMeta: metav1.TypeMeta{
@@ -467,6 +487,8 @@ func TestCacheGetResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "test",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj:         nil,
 			userAgent:        "kubelet",
@@ -612,7 +634,7 @@ func TestCacheGetResponse(t *testing.T) {
 func TestCacheWatchResponse(t *testing.T) {
 	mkPod := func(id string, rv string) *v1.Pod {
 		return &v1.Pod{
-			TypeMeta:   metav1.TypeMeta{APIVersion: "", Kind: "Pod"},
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
 			ObjectMeta: metav1.ObjectMeta{Name: id, Namespace: "default", ResourceVersion: rv},
 			Spec:       v1.PodSpec{NodeName: "node1"},
 		}
@@ -668,6 +690,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkPod("mypod1", "2")},
@@ -698,6 +722,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkPod("mypod1", "2")},
@@ -726,6 +752,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkPod("mypod1", "2")},
@@ -755,6 +783,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkPod("mypod1", "6")},
@@ -784,6 +814,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkCronTab("crontab1", "2")},
@@ -814,6 +846,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkCronTab("crontab1", "2")},
@@ -842,6 +876,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkCronTab("crontab1", "2")},
@@ -871,6 +907,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Added, Object: mkCronTab("crontab1", "6")},
@@ -899,6 +937,8 @@ func TestCacheWatchResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []watch.Event{
 				{Type: watch.Bookmark, Object: mkPod("mypod1", "2")},
@@ -1035,6 +1075,8 @@ func TestCacheListResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&v1.PodList{
@@ -1105,6 +1147,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "nodes",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&v1.NodeList{
@@ -1183,6 +1227,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "nodes",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&v1.NodeList{
@@ -1228,6 +1274,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "runtimeclasses",
+				Group:     "node.k8s.io",
+				Version:   "v1beta1",
 			},
 			inputObj: runtime.Object(
 				&nodev1beta1.RuntimeClassList{
@@ -1260,6 +1308,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "nodetest",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&metav1.Status{
@@ -1288,6 +1338,8 @@ func TestCacheListResponse(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&unstructured.UnstructuredList{
@@ -1348,6 +1400,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "foos",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&unstructured.UnstructuredList{
@@ -1406,6 +1460,8 @@ func TestCacheListResponse(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "foos",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(
 				&unstructured.UnstructuredList{
@@ -1610,6 +1666,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod1",
+				Group:     "",
+				Version:   "v1",
 			},
 			expectResult: struct {
 				err  bool
@@ -1646,6 +1704,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -1679,6 +1739,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -1715,6 +1777,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "pods",
 				Namespace: "default",
 				Name:      "mypod2",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -1750,6 +1814,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "mynode1",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Node{
 				TypeMeta: metav1.TypeMeta{
@@ -1783,6 +1849,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "nodes",
 				Name:      "mynode2",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&v1.Node{
 				TypeMeta: metav1.TypeMeta{
@@ -1823,6 +1891,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab1",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			expectResult: struct {
 				err  bool
@@ -1840,6 +1910,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab1",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -1873,6 +1945,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab1",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -1909,6 +1983,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab2",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -1945,6 +2021,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Resources: "crontabs",
 				Namespace: "default",
 				Name:      "crontab3",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -1980,6 +2058,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo1",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -2011,6 +2091,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo1",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -2044,6 +2126,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo2",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -2077,6 +2161,8 @@ func TestQueryCacheForGet(t *testing.T) {
 				Component: "kubelet",
 				Resources: "foos",
 				Name:      "foo3",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			inputObj: runtime.Object(&unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -2316,6 +2402,8 @@ func TestQueryCacheForList(t *testing.T) {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []runtime.Object{
 				&v1.Pod{
@@ -2375,6 +2463,8 @@ func TestQueryCacheForList(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "nodes",
+				Group:     "",
+				Version:   "v1",
 			},
 			inputObj: []runtime.Object{
 				&v1.Node{
@@ -2442,6 +2532,8 @@ func TestQueryCacheForList(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "runtimeclasses",
+				Group:     "node.k8s.io",
+				Version:   "v1beta1",
 			},
 			inputObj: []runtime.Object{
 				&unstructured.Unstructured{},
@@ -2464,6 +2556,8 @@ func TestQueryCacheForList(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "pods",
+				Group:     "",
+				Version:   "v1",
 			},
 			userAgent:  "kubelet",
 			accept:     "application/json",
@@ -2487,6 +2581,8 @@ func TestQueryCacheForList(t *testing.T) {
 				Component: "kubelet",
 				Resources: "crontabs",
 				Namespace: "default",
+				Group:     "stable.example.com",
+				Version:   "v1",
 			},
 			cachedKind: "stable.example.com/v1/CronTab",
 			inputObj: []runtime.Object{
@@ -2547,6 +2643,8 @@ func TestQueryCacheForList(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "foos",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			cachedKind: "samplecontroller.k8s.io/v1/Foo",
 			inputObj: []runtime.Object{
@@ -2604,6 +2702,8 @@ func TestQueryCacheForList(t *testing.T) {
 			keyBuildInfo: storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "foos",
+				Group:     "samplecontroller.k8s.io",
+				Version:   "v1",
 			},
 			cachedKind: "samplecontroller.k8s.io/v1/Foo",
 			inputObj: []runtime.Object{
