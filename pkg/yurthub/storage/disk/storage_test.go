@@ -30,6 +30,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -130,6 +131,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			}
 			pod, podKey, err = generatePod(store.KeyFunc, &podObj, podKeyInfo)
@@ -151,6 +154,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			}
 			rootKey, err := store.KeyFunc(rootKeyInfo)
 			Expect(err).To(BeNil())
@@ -180,6 +185,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			}
 			_, podKey, err = generateObjFiles(baseDir, store.KeyFunc, &podObj, podKeyInfo)
@@ -201,6 +208,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -212,6 +221,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			})
 			Expect(err).To(BeNil())
 			err = store.Delete(rootKey)
@@ -233,6 +244,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -256,6 +269,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -267,6 +282,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			})
 			Expect(err).To(BeNil())
 			_, err = store.Get(rootKey)
@@ -287,6 +304,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			rootKeyInfo = storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "pods",
+				Group:     "",
+				Version:   "v1",
 			}
 			rootKey, err = store.KeyFunc(rootKeyInfo)
 			Expect(err).To(BeNil())
@@ -296,6 +315,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					Component: "kubelet",
 					Resources: "pods",
 					Namespace: namespace1,
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -306,6 +327,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					Component: "kubelet",
 					Resources: "pods",
 					Namespace: namespace2,
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -361,7 +384,7 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			Expect(err).To(Equal(storage.ErrStorageNotFound))
 		})
 		It("should return empty slice if the rootKey exists but no keys have it as prefix", func() {
-			path := filepath.Join(baseDir, "kubelet/services")
+			path := filepath.Join(baseDir, "kubelet/services.v1.core")
 			err = os.MkdirAll(path, 0755)
 			Expect(err).To(BeNil())
 			rootKeyInfo.Resources = "services"
@@ -432,6 +455,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 			})
 			Expect(err).To(BeNil())
 			_, err = store.Update(rootKey, comingPodBytes, comingPodRvUint64)
@@ -446,6 +471,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -487,6 +514,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 						Component: "kubelet",
 						Resources: "pods",
 						Namespace: namespace1,
+						Group:     "",
+						Version:   "v1",
 						Name:      uuid.New().String(),
 					})
 					Expect(err).To(BeNil())
@@ -498,6 +527,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 						Component: "kubelet",
 						Resources: "pods",
 						Namespace: namespace2,
+						Group:     "",
+						Version:   "v1",
 						Name:      uuid.New().String(),
 					})
 					Expect(err).To(BeNil())
@@ -510,7 +541,11 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				// all generated files will be deleted when deleting the base dir of diskStorage.
 			})
 			It("should get all keys of resource of component", func() {
-				gotKeys, err := store.ListResourceKeysOfComponent("kubelet", "pods")
+				gotKeys, err := store.ListResourceKeysOfComponent("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "pods",
+				})
 				Expect(err).To(BeNil())
 				gotKeysMap := make(map[storage.Key]struct{})
 				for _, k := range gotKeys {
@@ -519,9 +554,17 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Expect(gotKeysMap).To(Equal(allPodKeys))
 			})
 			It("should return ErrStorageNotFound if the cache of component cannot be found or the resource has not been cached", func() {
-				_, err = store.ListResourceKeysOfComponent("kubelet", "services")
+				_, err = store.ListResourceKeysOfComponent("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "services",
+				})
 				Expect(err).To(Equal(storage.ErrStorageNotFound))
-				_, err = store.ListResourceKeysOfComponent("kube-proxy", "pods")
+				_, err = store.ListResourceKeysOfComponent("kube-proxy", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "pods",
+				})
 				Expect(err).To(Equal(storage.ErrStorageNotFound))
 			})
 		})
@@ -534,6 +577,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					_, genKey, err := generateObjFiles(baseDir, store.KeyFunc, &nodeObj, storage.KeyBuildInfo{
 						Component: "kubelet",
 						Resources: "nodes",
+						Group:     "",
+						Version:   "v1",
 						Name:      uuid.New().String(),
 					})
 					Expect(err).To(BeNil())
@@ -544,8 +589,12 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				// nothing to do
 				// all generated files will be deleted when deleting the base dir of diskStorage.
 			})
-			It("should get all keys of resource of component", func() {
-				gotKeys, err := store.ListResourceKeysOfComponent("kubelet", "nodes")
+			It("should get all keys of gvr of component", func() {
+				gotKeys, err := store.ListResourceKeysOfComponent("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "nodes",
+				})
 				Expect(err).To(BeNil())
 				for _, k := range gotKeys {
 					_, ok := nodeKeys[k]
@@ -555,18 +604,30 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Expect(len(nodeKeys)).To(BeZero())
 			})
 			It("should return ErrStorageNotFound if the cache of component cannot be found or the resource has not been cached", func() {
-				_, err = store.ListResourceKeysOfComponent("kube-proxy", "nodes")
+				_, err = store.ListResourceKeysOfComponent("kube-proxy", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "nodes",
+				})
 				Expect(err).To(Equal(storage.ErrStorageNotFound))
-				_, err = store.ListResourceKeysOfComponent("kubelet", "services")
+				_, err = store.ListResourceKeysOfComponent("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "services",
+				})
 				Expect(err).To(Equal(storage.ErrStorageNotFound))
 			})
 		})
 		It("should return ErrEmptyComponent if component is empty", func() {
-			_, err = store.ListResourceKeysOfComponent("", "pods")
+			_, err = store.ListResourceKeysOfComponent("", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "pods",
+			})
 			Expect(err).To(Equal(storage.ErrEmptyComponent))
 		})
-		It("should return ErrEmptyResource if resource is empty", func() {
-			_, err = store.ListResourceKeysOfComponent("kubelet", "")
+		It("should return ErrEmptyResource if gvr is empty", func() {
+			_, err = store.ListResourceKeysOfComponent("kubelet", schema.GroupVersionResource{})
 			Expect(err).To(Equal(storage.ErrEmptyResource))
 		})
 	})
@@ -588,6 +649,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					Component: "kubelet",
 					Resources: "pods",
 					Namespace: namespace1,
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -598,6 +661,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					Component: "kubelet",
 					Resources: "pods",
 					Namespace: namespace2,
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -607,6 +672,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				genBytes, genKey, err := generateObjFiles(baseDir, store.KeyFunc, &nodeObj, storage.KeyBuildInfo{
 					Component: "kubelet",
 					Resources: "nodes",
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -618,13 +685,15 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			// all generated files will be deleted when deleting the base dir of diskStorage.
 		})
 
-		It("should replace all cached non-namespaced objs of resource of component", func() {
+		It("should replace all cached non-namespaced objs of gvr of component", func() {
 			newNodeNum := nodeNum + 2
 			newNodeContents := make(map[storage.Key][]byte, newNodeNum)
 			for i := 0; i < newNodeNum; i++ {
 				genNode, genKey, err := generateNode(store.KeyFunc, &nodeObj, storage.KeyBuildInfo{
 					Component: "kubelet",
 					Resources: "nodes",
+					Group:     "",
+					Version:   "v1",
 					Name:      uuid.New().String(),
 				})
 				Expect(err).To(BeNil())
@@ -632,11 +701,15 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				Expect(err).To(BeNil())
 				newNodeContents[genKey] = genBytes
 			}
-			err = store.ReplaceComponentList("kubelet", "nodes", "", newNodeContents)
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "nodes",
+			}, "", newNodeContents)
 			Expect(err).To(BeNil())
 
-			By("check if files under kubelet/nodes are replaced with newNodeContents")
-			gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "nodes"))
+			By("check if files under kubelet/nodes.v1.core are replaced with newNodeContents")
+			gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "nodes.v1.core"))
 			Expect(err).To(BeNil())
 			Expect(len(gotContents)).To(Equal(newNodeNum))
 			for k, c := range newNodeContents {
@@ -661,6 +734,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 						Component: "kubelet",
 						Resources: "pods",
 						Namespace: newPodNamespace,
+						Group:     "",
+						Version:   "v1",
 						Name:      uuid.New().String(),
 					})
 					Expect(err).To(BeNil())
@@ -669,7 +744,7 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					newPodContents[genKey] = genBytes
 				}
 			})
-			It("should replace cached objs of all namespaces of resource of component if namespace is not provided", func() {
+			It("should replace cached objs of all namespaces of gvr of component if namespace is not provided", func() {
 				allContents := make(map[storage.Key][]byte)
 				for k, c := range newPodContents {
 					allContents[k] = c
@@ -683,6 +758,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 					genPod, genKey, err := generatePod(store.KeyFunc, &podObj, storage.KeyBuildInfo{
 						Component: "kubelet",
 						Resources: "pods",
+						Group:     "",
+						Version:   "v1",
 						Namespace: newPodNamespace2,
 						Name:      uuid.New().String(),
 					})
@@ -694,11 +771,15 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				}
 
 				By("call ReplaceComponentList without provided namespace")
-				err = store.ReplaceComponentList("kubelet", "pods", "", allContents)
+				err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "pods",
+				}, "", allContents)
 				Expect(err).To(BeNil())
 
 				By("ensure files under newPodNamespace have been replaced")
-				gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods", newPodNamespace))
+				gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods.v1.core", newPodNamespace))
 				Expect(err).To(BeNil())
 				Expect(len(gotContents)).To(Equal(newPodNum))
 				for k, c := range newPodContents {
@@ -709,7 +790,7 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				}
 
 				By("ensure files under newPodNamespace2 have been created")
-				gotContents, err = getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods", newPodNamespace2))
+				gotContents, err = getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods.v1.core", newPodNamespace2))
 				Expect(err).To(BeNil())
 				Expect(len(gotContents)).To(Equal(newPodNamespace2Num))
 				for k, c := range newPodNamespace2Contents {
@@ -720,20 +801,24 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				}
 
 				By("ensure files under other namespaces have been removed")
-				entries, err := os.ReadDir(filepath.Join(baseDir, "kubelet", "pods"))
+				entries, err := os.ReadDir(filepath.Join(baseDir, "kubelet", "pods.v1.core"))
 				Expect(err).To(BeNil())
 				Expect(len(entries)).To(Equal(2))
 				Expect(entries[0].IsDir() && entries[1].IsDir())
 				Expect((entries[0].Name() == newPodNamespace && entries[1].Name() == newPodNamespace2) ||
 					(entries[0].Name() == newPodNamespace2 && entries[1].Name() == newPodNamespace)).To(BeTrue())
 			})
-			It("should replace cached objs under the namespace of resource of component if namespace is provided", func() {
+			It("should replace cached objs under the namespace of gvr of component if namespace is provided", func() {
 				By("call ReplaceComponentList")
-				err = store.ReplaceComponentList("kubelet", "pods", newPodNamespace, newPodContents)
+				err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+					Group:    "",
+					Version:  "v1",
+					Resource: "pods",
+				}, newPodNamespace, newPodContents)
 				Expect(err).To(BeNil())
 
 				By("ensure files under the specified namespace have been replaced")
-				gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods", newPodNamespace))
+				gotContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods.v1.core", newPodNamespace))
 				Expect(err).To(BeNil())
 				Expect(len(gotContents)).To(Equal(newPodNum))
 				for k, c := range newPodContents {
@@ -744,7 +829,7 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				}
 
 				By("ensure pod files of namespace2 are unchanged")
-				curContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods", namespace2))
+				curContents, err := getFilesUnderDir(filepath.Join(baseDir, "kubelet", "pods.v1.core", namespace2))
 				Expect(err).To(BeNil())
 				Expect(len(curContents)).To(Equal(podNamespace2Num))
 				for k, c := range contentsOfPodInNamespace2 {
@@ -756,16 +841,22 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			})
 		})
 
-		It("should return error if namespace is provided but the resource is non-namespaced", func() {
-			err = store.ReplaceComponentList("kubelet", "pods", "default", contentsOfNode)
+		It("should return error if namespace is provided but the gvr is non-namespaced", func() {
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "pods",
+			}, "default", contentsOfNode)
 			Expect(err).Should(HaveOccurred())
 		})
-		It("should create base dirs and files if this kind of resources has never been cached", func() {
+		It("should create base dirs and files if this kind of gvr has never been cached", func() {
 			By("generate a new pod obj in non-existing namespace")
 			newPod, newPodKey, err := generatePod(store.KeyFunc, &podObj, storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "pods",
 				Namespace: "nonexisting",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -773,7 +864,11 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			Expect(err).To(BeNil())
 
 			By("call ReplaceComponentList")
-			err = store.ReplaceComponentList("kubelet", "pods", "nonexisting", map[storage.Key][]byte{
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "pods",
+			}, "nonexisting", map[storage.Key][]byte{
 				newPodKey: newPodBytes,
 			})
 			Expect(err).To(BeNil())
@@ -783,12 +878,14 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			Expect(err).To(BeNil())
 			Expect(buf).To(Equal(newPodBytes))
 		})
-		It("should create base dirs and files if the component has no resource been cached", func() {
+		It("should create base dirs and files if the component has no resource of gvr cached", func() {
 			By("generate a new pod obj cached by new component")
 			newPod, newPodKey, err := generatePod(store.KeyFunc, &podObj, storage.KeyBuildInfo{
 				Component: "kube-proxy",
 				Resources: "pods",
 				Namespace: "default",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -796,7 +893,11 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			Expect(err).To(BeNil())
 
 			By("call ReplaceComponentList")
-			err = store.ReplaceComponentList("kube-proxy", "pods", "default", map[storage.Key][]byte{
+			err = store.ReplaceComponentList("kube-proxy", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "pods",
+			}, "default", map[storage.Key][]byte{
 				newPodKey: newPodBytes,
 			})
 			Expect(err).To(BeNil())
@@ -807,22 +908,34 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			Expect(buf).To(Equal(newPodBytes))
 		})
 		It("should create the base dir when contents is empty", func() {
-			err = store.ReplaceComponentList("kubelet", "csidrivers", "", nil)
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+				Group:    "storage.k8s.io",
+				Version:  "v1",
+				Resource: "csidrivers",
+			}, "", nil)
 			Expect(err).To(BeNil())
-			entries, err := os.ReadDir(filepath.Join(baseDir, "kubelet", "csidrivers"))
+			entries, err := os.ReadDir(filepath.Join(baseDir, "kubelet", "csidrivers.v1.storage.k8s.io"))
 			Expect(err).To(BeNil(), fmt.Sprintf("failed to read dir %v", err))
 			Expect(len(entries)).To(BeZero())
 		})
 		It("should return ErrEmptyComponent if component is empty", func() {
-			err = store.ReplaceComponentList("", "pods", "default", map[storage.Key][]byte{})
+			err = store.ReplaceComponentList("", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "pods",
+			}, "default", map[storage.Key][]byte{})
 			Expect(err).To(Equal(storage.ErrEmptyComponent))
 		})
-		It("should return ErrEmptyResource if resource is empty", func() {
-			err = store.ReplaceComponentList("kubelet", "", "default", map[storage.Key][]byte{})
+		It("should return ErrEmptyResource if gvr is empty", func() {
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{}, "default", map[storage.Key][]byte{})
 			Expect(err).To(Equal(storage.ErrEmptyResource))
 		})
-		It("should return ErrInvalidContent if some contents are not the specified resource", func() {
-			err = store.ReplaceComponentList("kubelet", "nodes", "", contentsOfPodInNamespace1)
+		It("should return ErrInvalidContent if some contents are not the specified gvr", func() {
+			err = store.ReplaceComponentList("kubelet", schema.GroupVersionResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "nodes",
+			}, "", contentsOfPodInNamespace1)
 			Expect(err).To(Equal(storage.ErrInvalidContent))
 		})
 	})
@@ -832,6 +945,8 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 			_, _, err = generateObjFiles(baseDir, store.KeyFunc, &nodeObj, storage.KeyBuildInfo{
 				Component: "kubelet",
 				Resources: "nodes",
+				Group:     "",
+				Version:   "v1",
 				Name:      uuid.New().String(),
 			})
 			Expect(err).To(BeNil())
@@ -928,6 +1043,8 @@ func keyFromPodObject(keyFunc func(storage.KeyBuildInfo) (storage.Key, error), p
 		Component: "kubelet",
 		Resources: "pods",
 		Namespace: ns,
+		Group:     "",
+		Version:   "v1",
 		Name:      name,
 	}
 	return keyFunc(keyInfo)
@@ -1029,16 +1146,16 @@ func TestExtractInfoFromPath(t *testing.T) {
 	}{
 		"normal case": {
 			baseDir:    "/tmp/baseDir",
-			path:       "/tmp/baseDir/kubelet/pods/default/podname-a",
+			path:       "/tmp/baseDir/kubelet/pods.v1.core/default/podname-a",
 			isRoot:     false,
-			want:       []string{"kubelet", "pods", "default", "podname-a"},
+			want:       []string{"kubelet", "pods.v1.core", "default", "podname-a"},
 			wantErrOut: "",
 		},
 		"root path": {
 			baseDir:    "/tmp/baseDir",
-			path:       "/tmp/baseDir/kubelet/pods/default",
+			path:       "/tmp/baseDir/kubelet/pods.v1.core/default",
 			isRoot:     true,
-			want:       []string{"kubelet", "pods", "default", ""},
+			want:       []string{"kubelet", "pods.v1.core", "default", ""},
 			wantErrOut: "",
 		},
 		"few elements in path": {
@@ -1050,17 +1167,17 @@ func TestExtractInfoFromPath(t *testing.T) {
 		},
 		"too many elements of path": {
 			baseDir:    "/tmp/baseDir",
-			path:       "/tmp/baseDir/kubelet/kubelet/pods/default/podname-a",
+			path:       "/tmp/baseDir/kubelet/kubelet/pods.v1.core/default/podname-a",
 			isRoot:     false,
 			want:       []string{"", "", "", ""},
-			wantErrOut: "invalid path /tmp/baseDir/kubelet/kubelet/pods/default/podname-a",
+			wantErrOut: "invalid path /tmp/baseDir/kubelet/kubelet/pods.v1.core/default/podname-a",
 		},
 		"path does not under the baseDir": {
 			baseDir:    "/tmp/baseDir",
-			path:       "/other/baseDir/kubelet/pods/default/podname-a",
+			path:       "/other/baseDir/kubelet/pods.v1.core/default/podname-a",
 			isRoot:     false,
 			want:       []string{"", "", "", ""},
-			wantErrOut: "path /other/baseDir/kubelet/pods/default/podname-a does not under /tmp/baseDir",
+			wantErrOut: "path /other/baseDir/kubelet/pods.v1.core/default/podname-a does not under /tmp/baseDir",
 		},
 	}
 
