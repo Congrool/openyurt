@@ -41,7 +41,8 @@ import (
 )
 
 const (
-	interval = 2 * time.Second
+	interval            = 2 * time.Second
+	watchDefaultTimeout = 60 * time.Second
 )
 
 // IsHealthy is func for fetching healthy status of remote server
@@ -175,7 +176,8 @@ func (lp *LocalProxy) localWatch(w http.ResponseWriter, req *http.Request) error
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	} else {
-		return nil
+		klog.V(2).Infof("no timeout seconds set for req: %s, use default timeout: %ds", hubutil.ReqString(req), watchDefaultTimeout/time.Second)
+		timeout = watchDefaultTimeout
 	}
 
 	watchTimer := time.NewTimer(timeout)
