@@ -274,6 +274,9 @@ func IfExists(path string) bool {
 
 func IsRegularFile(path string) (bool, error) {
 	if info, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, ErrNotExists
+		}
 		return false, err
 	} else {
 		return info.Mode().IsRegular(), nil
@@ -282,6 +285,9 @@ func IsRegularFile(path string) (bool, error) {
 
 func IsDir(path string) (bool, error) {
 	if info, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, ErrNotExists
+		}
 		return false, err
 	} else {
 		return info.Mode().IsDir(), nil
