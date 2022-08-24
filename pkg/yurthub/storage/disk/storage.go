@@ -59,10 +59,11 @@ func NewDiskStorage(dir string) (storage.Store, error) {
 		klog.Infof("disk cache path is empty, set it by default %s", CacheBaseDir)
 		dir = CacheBaseDir
 	}
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err = os.MkdirAll(dir, 0755); err != nil {
-			return nil, err
-		}
+
+	fsOperator := &fs.FileSystemOperator{}
+
+	if err := fsOperator.CreateDir(dir); err != nil && err != fs.ErrExists {
+		return nil, fmt.Errorf("failed to create cache path %s, %v", dir, err)
 	}
 
 	// prune suffix "/" of dir
@@ -72,6 +73,7 @@ func NewDiskStorage(dir string) (storage.Store, error) {
 		keyPendingStatus: make(map[string]struct{}),
 		baseDir:          dir,
 		serializer:       json.NewSerializerWithOptions(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme, json.SerializerOptions{}),
+		fsOperator:       fsOperator,
 	}
 
 	err := ds.Recover()
@@ -365,7 +367,7 @@ func (ds *diskStorage) ReplaceComponentList(component string, gvr schema.GroupVe
 	}
 
 	//  3. delete old tmp dir
-	return os.RemoveAll(tmpPath)
+	return ds.fsOperator.DeleteDir(tmpPath)
 }
 
 // DeleteComponentResources will delete all resources cached for component.
