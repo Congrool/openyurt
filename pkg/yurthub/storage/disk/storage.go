@@ -441,8 +441,19 @@ func (ds *diskStorage) GetClusterInfo(key storage.ClusterInfoKey) ([]byte, error
 
 // Recover will walk the baseDir of this diskStorage, and try to recover the storage
 // using backup file. It works when yurthub or the node breaks down and restart.
+//
+// Note:
+// If a dir/file is a tmp dir/file, then we assume that any parent path should not be tmp path.
+// Because we lock the path when manipulating it.
 func (ds *diskStorage) Recover() error {
+	recoveredDir := map[string]struct{}{}
 	err := filepath.Walk(ds.baseDir, func(path string, info os.FileInfo, err error) error {
+		for p := range recoveredDir {
+			if strings.HasPrefix(path, p) {
+				return nil
+			}
+		}
+
 		if err != nil {
 			return err
 		}
@@ -453,6 +464,7 @@ func (ds *diskStorage) Recover() error {
 				if err := ds.recoverDir(path); err != nil {
 					return fmt.Errorf("failed to recover dir %s, %v", path, err)
 				}
+				recoveredDir[path] = struct{}{}
 			case info.Mode().IsRegular():
 				if err := ds.recoverFile(path); err != nil {
 					return fmt.Errorf("failed to recover file %s, %v", path, err)
@@ -469,18 +481,19 @@ func (ds *diskStorage) Recover() error {
 }
 
 func (ds *diskStorage) recoverFile(tmpPath string) error {
+	if ok, err := fs.IsRegularFile(tmpPath); err != nil || !ok {
+		return fmt.Errorf("failed at tmp path %s, isRegularFile: %v, error: %v", tmpPath, ok, err)
+	}
+
 	tmpKey := strings.TrimPrefix(tmpPath, ds.baseDir)
 	key := getKey(tmpKey)
 	path := filepath.Join(ds.baseDir, key)
 	if fs.IfExists(path) {
-		if ok, err := fs.IsRegularFile(path); err == nil && ok {
-			if dErr := ds.fsOperator.DeleteFile(path); dErr != nil {
-				return fmt.Errorf("failed to delete file at %s, %v", path, dErr)
-			}
-		} else if err != nil {
-			return err
-		} else {
-			return fmt.Errorf("path at %s is not a regular file", path)
+		if ok, err := fs.IsRegularFile(path); err != nil || !ok {
+			return fmt.Errorf("failed at origin path %s, isRegularFile: %v, error: %v", path, ok, err)
+		}
+		if err := ds.fsOperator.DeleteFile(path); err != nil {
+			return fmt.Errorf("failed to delete file at %s, %v", path, err)
 		}
 	}
 	if err := ds.fsOperator.Rename(tmpPath, path); err != nil {
@@ -490,18 +503,19 @@ func (ds *diskStorage) recoverFile(tmpPath string) error {
 }
 
 func (ds *diskStorage) recoverDir(tmpPath string) error {
+	if ok, err := fs.IsDir(tmpPath); err != nil || !ok {
+		return fmt.Errorf("failed at tmp path %s, isDir: %v, error: %v", tmpPath, ok, err)
+	}
+
 	tmpKey := strings.TrimPrefix(tmpPath, ds.baseDir)
 	key := getKey(tmpKey)
 	path := filepath.Join(ds.baseDir, key)
 	if fs.IfExists(path) {
-		if ok, err := fs.IsDir(path); err == nil && ok {
-			if dErr := ds.fsOperator.DeleteDir(path); dErr != nil {
-				return fmt.Errorf("failed to delete dir at %s, %v", path, dErr)
-			}
-		} else if err != nil {
-			return err
-		} else {
-			return fmt.Errorf("path at %s is not a dir", path)
+		if ok, err := fs.IsDir(path); err != nil || !ok {
+			return fmt.Errorf("failed at origin path %s, isDir: %v, error: %v", path, ok, err)
+		}
+		if err := ds.fsOperator.DeleteDir(path); err != nil {
+			return fmt.Errorf("failed to delete dir at %s, %v", path, err)
 		}
 	}
 	if err := ds.fsOperator.Rename(tmpPath, path); err != nil {

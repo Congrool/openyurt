@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -35,6 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/openyurtio/openyurt/pkg/yurthub/storage"
+	"github.com/openyurtio/openyurt/pkg/yurthub/util/fs"
 )
 
 var diskStorageTestBaseDir = "/tmp/diskStorage-funcTest"
@@ -98,7 +100,172 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("Test DiskStorage Setup", func() {
-	// TODO:
+	var store *diskStorage
+	var baseDir string
+	var err error
+	var fileGenerator func(basePath string, content []byte) error
+	var fileChecker func(basePath string, content []byte) error
+	BeforeEach(func() {
+		baseDir = filepath.Join(diskStorageTestBaseDir, uuid.New().String())
+		Expect(err).To(BeNil())
+		store = &diskStorage{
+			baseDir:    baseDir,
+			fsOperator: &fs.FileSystemOperator{},
+		}
+		fileChecker = func(basePath string, content []byte) error {
+			cnt := 3
+			for i := 0; i < cnt; i++ {
+				path := fmt.Sprintf("%s/resource%d", basePath, i)
+				buf, err := checkFileAt(path)
+				if err != nil {
+					return err
+				}
+				if !reflect.DeepEqual(buf, content) {
+					return fmt.Errorf("wrong content at %s, want: %s, got: %s", path, string(content), string(buf))
+				}
+			}
+			return nil
+		}
+		fileGenerator = func(basePath string, content []byte) error {
+			cnt := 3
+			if err := os.MkdirAll(basePath, 0755); err != nil {
+				return err
+			}
+			for i := 0; i < cnt; i++ {
+				path := fmt.Sprintf("%s/resource%d", basePath, i)
+				if err := writeFileAt(path, content); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	})
+	AfterEach(func() {
+		err = os.RemoveAll(baseDir)
+		Expect(err).To(BeNil())
+	})
+
+	Context("Test recoverFile", func() {
+		It("should recover when tmp path and origin path are both regular file", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/kube-root-ca.crt")
+			err = writeFileAt(originPath, []byte("origin-data"))
+			Expect(err).To(BeNil())
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/tmp_kube-root-ca.crt")
+			err = writeFileAt(tmpPath, []byte("tmp-data"))
+			Expect(err).To(BeNil())
+			err = store.recoverFile(tmpPath)
+			Expect(err).To(BeNil())
+			buf, err := checkFileAt(originPath)
+			Expect(err).To(BeNil())
+			Expect(buf).To(Equal([]byte("tmp-data")))
+		})
+		It("should recover when origin path does not exist", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/kube-root-ca.crt")
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/tmp_kube-root-ca.crt")
+			err = writeFileAt(tmpPath, []byte("tmp-data"))
+			Expect(err).To(BeNil())
+			err = store.recoverFile(tmpPath)
+			Expect(err).To(BeNil())
+			buf, err := checkFileAt(originPath)
+			Expect(err).To(BeNil())
+			Expect(buf).To(Equal([]byte("tmp-data")))
+		})
+		It("should return error if tmp path is not a regular file", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/kube-root-ca.crt")
+			err = writeFileAt(originPath, []byte("origin-data"))
+			Expect(err).To(BeNil())
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/tmp_kube-root-ca.crt")
+			err = os.MkdirAll(tmpPath, 0755)
+			Expect(err).To(BeNil())
+			err = store.recoverFile(tmpPath)
+			Expect(err).NotTo(BeNil())
+		})
+		It("should return error if origin path is not a regular file", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/kube-root-ca.crt")
+			err = os.MkdirAll(originPath, 0755)
+			Expect(err).To(BeNil())
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default/tmp_kube-root-ca.crt")
+			err = writeFileAt(tmpPath, []byte("tmp-data"))
+			Expect(err).To(BeNil())
+			err = store.recoverFile(tmpPath)
+			Expect(err).NotTo(BeNil())
+		})
+	})
+
+	Context("Test recoverDir", func() {
+		It("should recover if tmp path and origin path are both dir", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default")
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/tmp_default")
+			originData := []byte("origin")
+			tmpData := []byte("tmp")
+			err = fileGenerator(originPath, originData)
+			Expect(err).To(BeNil())
+			err = fileGenerator(tmpPath, tmpData)
+			Expect(err).To(BeNil())
+			err = store.recoverDir(tmpPath)
+			Expect(err).To(BeNil())
+			Expect(fs.IfExists(tmpPath)).To(BeFalse())
+			err = fileChecker(originPath, tmpData)
+			Expect(err).To(BeNil())
+		})
+		It("should recover if origin path does not exist", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default")
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/tmp_default")
+			tmpData := []byte("tmp")
+			err = fileGenerator(tmpPath, tmpData)
+			Expect(err).To(BeNil())
+			err = store.recoverDir(tmpPath)
+			Expect(err).To(BeNil())
+			Expect(fs.IfExists(tmpPath)).To(BeFalse())
+			err = fileChecker(originPath, tmpData)
+			Expect(err).To(BeNil())
+		})
+		It("should return error if tmp path is not a dir", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default")
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/tmp_default")
+			originData := []byte("origin")
+			tmpData := []byte("tmp")
+			err = fileGenerator(originPath, originData)
+			Expect(err).To(BeNil())
+			err = writeFileAt(tmpPath, tmpData)
+			Expect(err).To(BeNil())
+			err = store.recoverDir(tmpPath)
+			Expect(err).NotTo(BeNil())
+		})
+		It("should return error if origin path is not a dir", func() {
+			originPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/default")
+			tmpPath := filepath.Join(baseDir, "kubelet/configmaps.v1.core/tmp_default")
+			originData := []byte("origin")
+			tmpData := []byte("tmp")
+			err = writeFileAt(originPath, originData)
+			Expect(err).To(BeNil())
+			err = fileGenerator(tmpPath, tmpData)
+			Expect(err).To(BeNil())
+			err = store.recoverDir(tmpPath)
+			Expect(err).NotTo(BeNil())
+		})
+	})
+
+	Context("Test Recover", func() {
+		It("should recover cache", func() {
+			tmpResourcesDir := filepath.Join(baseDir, "kubelet/tmp_configmaps")
+			originResourcesDir := filepath.Join(baseDir, "kubelet/configmaps")
+			tmpPodsFilePath := filepath.Join(baseDir, "kubelet/pods/default/tmp_coredns")
+			originPodsFilePath := filepath.Join(baseDir, "kubelet/pods/default/coredns")
+			err = fileGenerator(tmpResourcesDir, []byte("tmp_configmaps"))
+			Expect(err).To(BeNil())
+			err = writeFileAt(tmpPodsFilePath, []byte("tmp_pods"))
+			Expect(err).To(BeNil())
+
+			err = store.Recover()
+			Expect(err).To(BeNil())
+			err = fileChecker(originResourcesDir, []byte("tmp_configmaps"))
+			Expect(err).To(BeNil())
+			buf, err := checkFileAt(originPodsFilePath)
+			Expect(err).To(BeNil())
+			Expect(buf).To(Equal([]byte("tmp_pods")))
+		})
+	})
 })
 
 var _ = Describe("Test DiskStorage Internal Functions", func() {
@@ -1034,7 +1201,7 @@ func writeFileAt(path string, content []byte) error {
 		return fmt.Errorf("failed to create dir at %s, %v", dir, path)
 	}
 
-	return os.WriteFile(path, content, 0755)
+	return os.WriteFile(path, content, 0766)
 }
 
 func keyFromPodObject(keyFunc func(storage.KeyBuildInfo) (storage.Key, error), pod *v1.Pod) (storage.Key, error) {
