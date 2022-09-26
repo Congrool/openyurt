@@ -501,7 +501,13 @@ func TestCacheGetResponse(t *testing.T) {
 		"cache response for get namespace": {
 			group:   "",
 			version: "v1",
-			key:     "kubelet/namespaces/kube-system",
+			keyBuildInfo: storage.KeyBuildInfo{
+				Component: "kubelet",
+				Resources: "namespaces",
+				Name:      "kube-system",
+				Group:     "",
+				Version:   "v1",
+			},
 			inputObj: runtime.Object(&v1.Namespace{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "v1",
@@ -1493,7 +1499,12 @@ func TestCacheListResponse(t *testing.T) {
 		"list namespaces": {
 			group:   "",
 			version: "v1",
-			key:     "kubelet/namespaces",
+			keyBuildInfo: storage.KeyBuildInfo{
+				Component: "kubelet",
+				Resources: "namespaces",
+				Group:     "",
+				Version:   "v1",
+			},
 			inputObj: runtime.Object(
 				&v1.NamespaceList{
 					TypeMeta: metav1.TypeMeta{
