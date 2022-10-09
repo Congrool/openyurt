@@ -173,10 +173,6 @@ func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 		return [][]byte{}, err
 	}
 
-	if !key.IsRootKey() {
-		return nil, storage.ErrIsNotRootKey
-	}
-
 	if !ds.lockKey(key) {
 		return nil, storage.ErrStorageAccessConflict
 	}
@@ -185,20 +181,31 @@ func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 	bb := make([][]byte, 0)
 	absPath := filepath.Join(ds.baseDir, key.Key())
 	files, err := ds.fsOperator.List(absPath, fs.ListModeFiles, true)
-	if err == fs.ErrNotExists {
+	switch err {
+	case nil:
+		// read all files and return
+		for _, filePath := range files {
+			buf, err := ds.fsOperator.Read(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read file at %s, %v", filePath, err)
+			}
+			bb = append(bb, buf)
+		}
+		return bb, nil
+	case fs.ErrNotExists:
 		return nil, storage.ErrStorageNotFound
-	}
-	if err != nil {
+	case fs.ErrIsNotDir:
+		// possibly it is a regular file, try to read it directly
+		if buf, rerr := ds.fsOperator.Read(absPath); rerr != nil {
+			return nil, fmt.Errorf("failed to list file at %s, %v", absPath, rerr)
+		} else {
+			bb = append(bb, buf)
+		}
+		return bb, nil
+	default:
+		// err != nil
 		return nil, fmt.Errorf("failed to get all files under %s, %v", absPath, err)
 	}
-	for _, filePath := range files {
-		buf, err := ds.fsOperator.Read(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file at %s, %v", filePath, err)
-		}
-		bb = append(bb, buf)
-	}
-	return bb, nil
 }
 
 // Update will update the file pointed by the key. It will check the rv of
