@@ -77,6 +77,7 @@ type objectRelatedInterface interface {
 
 	// List will retrieve all contents whose keys have the prefix of rootKey.
 	// If rootKey is empty, ErrKeyIsEmpty will be returned.
+	// If the passed-in key is not a root key, ErrIsNotRootKey will be returned.
 	// If the rootKey does not exist in the store, ErrStorageNotFound will be returned.
 	// If the rootKey exists in the store but no keys has the prefix of rootKey,
 	// an empty slice of content will be returned.
