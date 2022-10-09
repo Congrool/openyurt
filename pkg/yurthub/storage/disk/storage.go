@@ -129,6 +129,7 @@ func (ds *diskStorage) Delete(key storage.Key) error {
 	defer ds.unLockKey(key)
 
 	path := filepath.Join(ds.baseDir, key.Key())
+	// TODO: do we need to delete root key
 	if key.IsRootKey() {
 		return ds.fsOperator.DeleteDir(path)
 	}
@@ -169,7 +170,7 @@ func (ds *diskStorage) Get(key storage.Key) ([]byte, error) {
 // If the root dir of this rootKey does not exist, return ErrStorageNotFound.
 func (ds *diskStorage) List(key storage.Key) ([][]byte, error) {
 	if err := utils.ValidateKey(key, storageKey{}); err != nil {
-		return [][]byte{}, storage.ErrKeyIsEmpty
+		return [][]byte{}, err
 	}
 
 	if !key.IsRootKey() {
