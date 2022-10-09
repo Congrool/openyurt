@@ -567,8 +567,10 @@ var _ = Describe("Test DiskStorage Exposed Functions", func() {
 				key = k
 				break
 			}
-			_, err = store.List(key)
-			Expect(err).To(Equal(storage.ErrIsNotRootKey))
+			b, err := store.List(key)
+			Expect(err).To(BeNil())
+			Expect(len(b)).To(Equal(1))
+			Expect(b[0]).To(Equal(podNamespace1ObjBytes[key]))
 		})
 	})
 
