@@ -33,8 +33,8 @@ import (
 )
 
 const (
-	maxBackoff                        = 1 * time.Second
-	defaultLeaseDurationSeconds int32 = 40
+	maxBackoff          = 1 * time.Second
+	cacheLeaseKeyFormat = "/kubelet/leases/kube-node-lease/%s"
 )
 
 type NodeLease interface {

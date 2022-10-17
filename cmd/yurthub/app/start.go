@@ -19,12 +19,15 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
 	"github.com/openyurtio/openyurt/cmd/yurthub/app/config"
@@ -34,7 +37,7 @@ import (
 	"github.com/openyurtio/openyurt/pkg/yurthub/certificate/hubself"
 	"github.com/openyurtio/openyurt/pkg/yurthub/gc"
 	"github.com/openyurtio/openyurt/pkg/yurthub/healthchecker"
-	"github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/rest"
+	hubrest "github.com/openyurtio/openyurt/pkg/yurthub/kubernetes/rest"
 	"github.com/openyurtio/openyurt/pkg/yurthub/network"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy"
 	"github.com/openyurtio/openyurt/pkg/yurthub/server"
@@ -113,10 +116,17 @@ func Run(ctx context.Context, cfg *config.YurtHubConfiguration) error {
 	}
 	trace++
 
-	var healthChecker healthchecker.HealthChecker
+	klog.Infof("%d. prepare for health checker clients", trace)
+	healthCheckerClientsForCloud, _, err := createHealthCheckerClient(cfg.HeartbeatTimeoutSeconds, cfg.RemoteServers, cfg.CoordinatorServer, transportManager)
+	if err != nil {
+		return fmt.Errorf("failed to create health checker clients, %w", err)
+	}
+	trace++
+
+	var healthChecker healthchecker.MultipleBackendsHealthChecker
 	if cfg.WorkingMode == util.WorkingModeEdge {
 		klog.Infof("%d. create health checker for remote servers ", trace)
-		healthChecker, err = healthchecker.NewHealthChecker(cfg, transportManager, ctx.Done())
+		healthChecker, err = healthchecker.NewCloudAPIServerHealthChecker(cfg, healthCheckerClientsForCloud, ctx.Done())
 		if err != nil {
 			return fmt.Errorf("could not new health checker, %w", err)
 		}
@@ -126,11 +136,10 @@ func Run(ctx context.Context, cfg *config.YurtHubConfiguration) error {
 		// This fake checker will always report that the remote server is healthy.
 		healthChecker = healthchecker.NewFakeChecker(true, make(map[string]int))
 	}
-	healthChecker.Run()
 	trace++
 
 	klog.Infof("%d. new restConfig manager for %s mode", trace, cfg.CertMgrMode)
-	restConfigMgr, err := rest.NewRestConfigManager(cfg, certManager, healthChecker)
+	restConfigMgr, err := hubrest.NewRestConfigManager(cfg, certManager, healthChecker)
 	if err != nil {
 		return fmt.Errorf("could not new restConfig manager, %w", err)
 	}
@@ -170,7 +179,7 @@ func Run(ctx context.Context, cfg *config.YurtHubConfiguration) error {
 	trace++
 
 	klog.Infof("%d. new reverse proxy handler for remote servers", trace)
-	yurtProxyHandler, err := proxy.NewYurtReverseProxyHandler(cfg, cacheMgr, transportManager, healthChecker, certManager, tenantMgr, stopCh)
+	yurtProxyHandler, err := proxy.NewYurtReverseProxyHandler(cfg, cacheMgr, transportManager, healthChecker, tenantMgr, ctx.Done())
 
 	if err != nil {
 		return fmt.Errorf("could not create reverse proxy handler, %w", err)
@@ -200,4 +209,35 @@ func Run(ctx context.Context, cfg *config.YurtHubConfiguration) error {
 	s.Run()
 	klog.Infof("hub agent exited")
 	return nil
+}
+
+func createHealthCheckerClient(heartbeatTimeoutSeconds int, remoteServers []*url.URL, coordinatorServer *url.URL, tp transport.Interface) (map[string]kubernetes.Interface, kubernetes.Interface, error) {
+	var healthCheckerClientForCoordinator kubernetes.Interface
+	healthCheckerClientsForCloud := make(map[string]kubernetes.Interface)
+	for i := range remoteServers {
+		restConf := &rest.Config{
+			Host:      remoteServers[i].String(),
+			Transport: tp.CurrentTransport(),
+			Timeout:   time.Duration(heartbeatTimeoutSeconds) * time.Second,
+		}
+		c, err := kubernetes.NewForConfig(restConf)
+		if err != nil {
+			return healthCheckerClientsForCloud, healthCheckerClientForCoordinator, err
+		}
+		healthCheckerClientsForCloud[remoteServers[i].String()] = c
+	}
+
+	// comment the following code temporarily
+	//cfg := &rest.Config{
+	//	Host:      coordinatorServer.String(),
+	//	Transport: tp.CurrentTransport(),
+	//	Timeout:   time.Duration(heartbeatTimeoutSeconds) * time.Second,
+	//}
+	//c, err := kubernetes.NewForConfig(cfg)
+	//if err != nil {
+	//	return healthCheckerClientsForCloud, healthCheckerClientForCoordinator, err
+	//}
+	//healthCheckerClientForCoordinator = c
+
+	return healthCheckerClientsForCloud, healthCheckerClientForCoordinator, nil
 }
