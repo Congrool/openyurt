@@ -94,6 +94,8 @@ type YurtHubConfiguration struct {
 	CertIPs                           []net.IP
 	CoordinatorServer                 *url.URL
 	LeaderElection                    componentbaseconfig.LeaderElectionConfiguration
+	ProxiedClient                     kubernetes.Interface
+	CoordinatorClient                 kubernetes.Interface
 }
 
 // Complete converts *options.YurtHubOptions to *YurtHubConfiguration
