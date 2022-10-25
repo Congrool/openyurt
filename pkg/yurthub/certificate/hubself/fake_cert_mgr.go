@@ -24,7 +24,6 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/openyurtio/openyurt/cmd/yurthub/app/config"
 	"github.com/openyurtio/openyurt/pkg/projectinfo"
 	"github.com/openyurtio/openyurt/pkg/yurthub/certificate/interfaces"
 	"github.com/openyurtio/openyurt/pkg/yurthub/util/fs"
@@ -130,7 +129,7 @@ func (fyc *fakeYurtHubCertManager) ServerHealthy() bool {
 }
 
 // Update do nothing
-func (fyc *fakeYurtHubCertManager) Update(_ *config.YurtHubConfiguration) error {
+func (fyc *fakeYurtHubCertManager) Update(_ string) error {
 	return nil
 }
 
