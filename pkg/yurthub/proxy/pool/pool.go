@@ -12,7 +12,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/openyurtio/openyurt/pkg/yurthub/cachemanager"
-	"github.com/openyurtio/openyurt/pkg/yurthub/poolcoordinator"
 	"github.com/openyurtio/openyurt/pkg/yurthub/proxy/util"
 	"github.com/openyurtio/openyurt/pkg/yurthub/transport"
 	hubutil "github.com/openyurtio/openyurt/pkg/yurthub/util"
@@ -27,16 +26,13 @@ type PoolCoordinatorProxy struct {
 	poolCoordinatorProxy *util.RemoteProxy
 	localCacheMgr        cachemanager.CacheManager
 	isCoordinatorReady   func() bool
-	isCloudHealthy       func() bool
 }
 
 func NewPoolCoordinatorProxy(
 	poolCoordinatorAddr *url.URL,
 	localCacheMgr cachemanager.CacheManager,
-	coordinator *poolcoordinator.Coordinator,
 	transportMgr transport.Interface,
 	isCoordinatorReady func() bool,
-	isCloudHealthy func() bool,
 	stopCh <-chan struct{}) (*PoolCoordinatorProxy, error) {
 	if poolCoordinatorAddr == nil {
 		return nil, fmt.Errorf("pool-coordinator addr cannot be nil")
@@ -56,7 +52,6 @@ func NewPoolCoordinatorProxy(
 		poolCoordinatorProxy: proxy,
 		localCacheMgr:        localCacheMgr,
 		isCoordinatorReady:   isCoordinatorReady,
-		isCloudHealthy:       isCloudHealthy,
 	}, nil
 }
 
