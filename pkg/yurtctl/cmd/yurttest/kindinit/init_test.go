@@ -563,6 +563,7 @@ func TestInitializer_ConfigureCoreDnsAddon(t *testing.T) {
 		configObj     *corev1.ConfigMap
 		serviceObj    *corev1.Service
 		deploymentObj *v1.Deployment
+		nodeObj       *corev1.Node
 		want          interface{}
 	}{
 		configObj: &corev1.ConfigMap{
@@ -596,10 +597,15 @@ func TestInitializer_ConfigureCoreDnsAddon(t *testing.T) {
 				},
 			},
 		},
+		nodeObj: &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "foo",
+			},
+		},
 		want: nil,
 	}
 
-	initializer.kubeClient = clientsetfake.NewSimpleClientset(case1.configObj, case1.serviceObj, case1.deploymentObj)
+	initializer.kubeClient = clientsetfake.NewSimpleClientset(case1.configObj, case1.serviceObj, case1.deploymentObj, case1.nodeObj)
 	err := initializer.configureCoreDnsAddon()
 	if err != case1.want {
 		t.Errorf("failed to configure core dns addon")
@@ -639,6 +645,7 @@ func TestInitializer_ConfigureAddons(t *testing.T) {
 		serviceObj       *corev1.Service
 		podObj           *corev1.Pod
 		deploymentObj    *v1.Deployment
+		nodeObjs         []*corev1.Node
 		want             interface{}
 	}{
 		coreDnsConfigObj: &corev1.ConfigMap{
@@ -693,12 +700,33 @@ func TestInitializer_ConfigureAddons(t *testing.T) {
 				AvailableReplicas:  3,
 			},
 		},
+		nodeObjs: []*corev1.Node{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo1",
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo2",
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo3",
+				},
+			},
+		},
 		want: nil,
 	}
 
 	var fakeOut io.Writer
 	initializer := newKindInitializer(fakeOut, newKindOptions().Config())
-	initializer.kubeClient = clientsetfake.NewSimpleClientset(case1.coreDnsConfigObj, case1.proxyConfigObj, case1.serviceObj, case1.podObj, case1.deploymentObj)
+	client := clientsetfake.NewSimpleClientset(case1.coreDnsConfigObj, case1.proxyConfigObj, case1.serviceObj, case1.podObj, case1.deploymentObj)
+	for i := range case1.nodeObjs {
+		client.Tracker().Add(case1.nodeObjs[i])
+	}
+	initializer.kubeClient = client
 	err := initializer.configureAddons()
 	if err != case1.want {
 		t.Errorf("failed to configure addons")
