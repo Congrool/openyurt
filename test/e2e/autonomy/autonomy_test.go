@@ -200,7 +200,7 @@ var _ = ginkgo.Describe("edge-autonomy"+YurtE2ENamespaceName, ginkgo.Ordered, gi
 					return ""
 				}
 				return string(opBytes)
-			}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(gomega.ContainSubstring("NOERROR"), "DNS resolution contains error, coreDNS dig failed")
+			}).WithTimeout(30*time.Second).WithPolling(1*time.Second).Should(gomega.ContainSubstring("NOERROR"), "DNS resolution contains error, coreDNS dig failed")
 		})
 	})
 })
