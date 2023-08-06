@@ -5,7 +5,7 @@
 nameOverride: ""
 apiserverSecurePort: 10270
 apiserverImage:
-  registry: registry.k8s.io
+  registry: k8s.gcr.io
   repository: kube-apiserver
   tag: v1.22.0
 apiserverResources:
@@ -15,7 +15,7 @@ serviceClusterIPRange: 10.96.0.0/12
 etcdPort: 12379
 etcdMetricPort: 12381
 etcdImage:
-  registry: registry.k8s.io
+  registry: k8s.gcr.io
   repository: etcd
   tag: 3.5.0-0
 etcdResources:
